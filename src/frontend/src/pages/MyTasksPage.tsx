@@ -1,5 +1,5 @@
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Select,
   SelectContent,
@@ -10,9 +10,44 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { ListTodo } from "lucide-react";
 import { toast } from "sonner";
-import { Priority, TaskStatus } from "../backend.d";
+import { FrequencyType, Priority, TaskStatus } from "../backend.d";
 import type { Task } from "../backend.d";
 import { useMyTasks, useUpdateTaskStatus } from "../hooks/useQueries";
+
+// Returns true if the task should be shown today based on its frequency
+function isTaskActiveToday(task: Task): boolean {
+  const freq = task.frequency as FrequencyType;
+  if (freq === FrequencyType.none || freq === FrequencyType.daily) return true;
+
+  const now = new Date();
+  if (freq === FrequencyType.weekly) {
+    // frequencyDays = "Mon,Wed,Fri"
+    const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    const todayName = dayNames[now.getDay()];
+    const days = task.frequencyDays.split(",").map((d) => d.trim());
+    return days.includes(todayName);
+  }
+  if (freq === FrequencyType.monthly) {
+    // frequencyDays = "15"
+    const dayOfMonth = now.getDate();
+    return String(dayOfMonth) === task.frequencyDays.trim();
+  }
+  return true;
+}
+
+function frequencyLabel(task: Task): string {
+  const freq = task.frequency as FrequencyType;
+  switch (freq) {
+    case FrequencyType.daily:
+      return "Daily";
+    case FrequencyType.weekly:
+      return `Weekly: ${task.frequencyDays}`;
+    case FrequencyType.monthly:
+      return `Monthly: day ${task.frequencyDays}`;
+    default:
+      return "";
+  }
+}
 
 function PriorityBadge({ priority }: { priority: Priority }) {
   const map: Record<Priority, { label: string; className: string }> = {
@@ -54,6 +89,7 @@ function StatusBadge({ status }: { status: TaskStatus }) {
 
 function TaskCard({ task, index }: { task: Task; index: number }) {
   const updateStatus = useUpdateTaskStatus();
+  const freqLabel = frequencyLabel(task);
 
   function handleStatusChange(val: string) {
     updateStatus.mutate(
@@ -81,8 +117,13 @@ function TaskCard({ task, index }: { task: Task; index: number }) {
               <PriorityBadge priority={task.priority} />
               <StatusBadge status={task.status} />
               <span className="text-xs text-muted-foreground">
-                Due: {task.dueDate}
+                Target: {task.targetDate}
               </span>
+              {freqLabel && (
+                <Badge variant="outline" className="text-xs">
+                  {freqLabel}
+                </Badge>
+              )}
             </div>
           </div>
           <div className="sm:w-40 flex-shrink-0">
@@ -114,6 +155,10 @@ function TaskCard({ task, index }: { task: Task; index: number }) {
 
 export default function MyTasksPage() {
   const { data: tasks, isLoading } = useMyTasks();
+
+  // Split tasks into: active today vs not active today (based on frequency)
+  const activeTasks = (tasks ?? []).filter(isTaskActiveToday);
+  const inactiveTasks = (tasks ?? []).filter((t) => !isTaskActiveToday(t));
 
   return (
     <div className="max-w-4xl mx-auto space-y-5 animate-fade-up">
@@ -149,10 +194,38 @@ export default function MyTasksPage() {
           </CardContent>
         </Card>
       ) : (
-        <div className="space-y-3">
-          {tasks.map((task, i) => (
-            <TaskCard key={task.id.toString()} task={task} index={i} />
-          ))}
+        <div className="space-y-6">
+          {/* Today's active tasks */}
+          <div className="space-y-3">
+            <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+              Active Today ({activeTasks.length})
+            </h2>
+            {activeTasks.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No tasks scheduled for today.
+              </p>
+            ) : (
+              activeTasks.map((task, i) => (
+                <TaskCard key={task.id.toString()} task={task} index={i} />
+              ))
+            )}
+          </div>
+
+          {/* Not scheduled today */}
+          {inactiveTasks.length > 0 && (
+            <div className="space-y-3">
+              <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+                Not Scheduled Today ({inactiveTasks.length})
+              </h2>
+              {inactiveTasks.map((task, i) => (
+                <TaskCard
+                  key={task.id.toString()}
+                  task={task}
+                  index={activeTasks.length + i}
+                />
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>

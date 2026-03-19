@@ -1,3 +1,5 @@
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -15,13 +17,20 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2, ShieldCheck, UserCog } from "lucide-react";
+import {
+  AlertTriangle,
+  Loader2,
+  ShieldCheck,
+  UserCog,
+  Users,
+} from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { UserRole } from "../backend.d";
 import { useInternetIdentity } from "../hooks/useInternetIdentity";
 import {
-  useAssignRole,
+  useAdminCount,
+  useAssignUserRoleAsAdmin,
   useBootstrapAdmin,
   useIsAdmin,
 } from "../hooks/useQueries";
@@ -32,7 +41,9 @@ export default function AdminPanelPage() {
     isLoading: isAdminLoading,
     refetch: refetchIsAdmin,
   } = useIsAdmin();
-  const assignRole = useAssignRole();
+  const { data: adminCount = 0, isLoading: isAdminCountLoading } =
+    useAdminCount();
+  const assignRole = useAssignUserRoleAsAdmin();
   const bootstrapAdmin = useBootstrapAdmin();
   const { identity } = useInternetIdentity();
 
@@ -41,12 +52,23 @@ export default function AdminPanelPage() {
   const [error, setError] = useState("");
 
   const myPrincipal = identity?.getPrincipal().toText() ?? "";
+  const maxAdmins = 10;
+  const adminLimitReached = adminCount >= maxAdmins;
+  const adminRoleSelected = role === UserRole.admin;
+  const submitDisabled =
+    assignRole.isPending || (adminRoleSelected && adminLimitReached);
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
     if (!principal.trim()) {
       setError("Please enter a principal ID.");
+      return;
+    }
+    if (adminRoleSelected && adminLimitReached) {
+      setError(
+        `Maximum of ${maxAdmins} admins reached. Remove an admin before adding a new one.`,
+      );
       return;
     }
     assignRole.mutate(
@@ -150,14 +172,50 @@ export default function AdminPanelPage() {
   return (
     <div className="max-w-xl mx-auto animate-fade-up">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold flex items-center gap-2">
-          <ShieldCheck size={22} className="text-primary" />
-          Admin Panel
-        </h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Manage user roles and permissions
-        </p>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold flex items-center gap-2">
+              <ShieldCheck size={22} className="text-primary" />
+              Admin Panel
+            </h1>
+            <p className="text-sm text-muted-foreground mt-1">
+              Manage user roles and permissions
+            </p>
+          </div>
+          <div className="flex items-center gap-2 mt-1">
+            <Users size={15} className="text-muted-foreground" />
+            {isAdminCountLoading ? (
+              <Loader2
+                size={13}
+                className="animate-spin text-muted-foreground"
+              />
+            ) : (
+              <Badge
+                variant={adminLimitReached ? "destructive" : "secondary"}
+                className="text-xs font-semibold"
+                data-ocid="admin_panel.admin_count.badge"
+              >
+                Admins: {adminCount} / {maxAdmins}
+              </Badge>
+            )}
+          </div>
+        </div>
       </div>
+
+      {adminLimitReached && (
+        <Alert
+          variant="destructive"
+          className="mb-4"
+          data-ocid="admin_panel.limit.error_state"
+        >
+          <AlertTriangle size={15} className="mr-1" />
+          <AlertDescription>
+            Maximum of {maxAdmins} admins reached. Remove an existing admin
+            before promoting a new one.
+          </AlertDescription>
+        </Alert>
+      )}
+
       <Card className="shadow-card">
         <CardHeader className="pb-4">
           <CardTitle className="text-base flex items-center gap-2">
@@ -187,7 +245,10 @@ export default function AdminPanelPage() {
               <Label>Role</Label>
               <Select
                 value={role}
-                onValueChange={(v) => setRole(v as UserRole)}
+                onValueChange={(v) => {
+                  setRole(v as UserRole);
+                  setError("");
+                }}
               >
                 <SelectTrigger data-ocid="admin_panel.role.select">
                   <SelectValue />
@@ -198,6 +259,16 @@ export default function AdminPanelPage() {
                   <SelectItem value={UserRole.admin}>Admin</SelectItem>
                 </SelectContent>
               </Select>
+              {adminRoleSelected && adminLimitReached && (
+                <p
+                  className="text-xs text-destructive flex items-center gap-1 mt-1"
+                  data-ocid="admin_panel.admin_limit.error_state"
+                >
+                  <AlertTriangle size={12} />
+                  Admin limit reached ({maxAdmins}/{maxAdmins}). Cannot assign
+                  Admin role.
+                </p>
+              )}
             </div>
             {error && (
               <p
@@ -209,7 +280,7 @@ export default function AdminPanelPage() {
             )}
             <Button
               type="submit"
-              disabled={assignRole.isPending}
+              disabled={submitDisabled}
               data-ocid="admin_panel.assign.submit_button"
             >
               {assignRole.isPending ? (

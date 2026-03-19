@@ -1,11 +1,16 @@
 import { Principal } from "@icp-sdk/core/principal";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Priority, TaskStatus, UserRole } from "../backend.d";
-import type { Task, UserProfile, UserProfileEntry } from "../backend.d";
+import { FrequencyType, Priority, TaskStatus, UserRole } from "../backend.d";
+import type {
+  CompletionDate,
+  Task,
+  UserProfile,
+  UserProfileEntry,
+} from "../backend.d";
 import { useActor } from "./useActor";
 
 export type { Task, UserProfile, UserProfileEntry };
-export { Priority, TaskStatus, UserRole };
+export { FrequencyType, Priority, TaskStatus, UserRole };
 
 export function useIsAdmin() {
   const { actor, isFetching } = useActor();
@@ -61,9 +66,7 @@ export function useDashboardStats(isAdmin: boolean) {
     queryKey: ["dashboardStats", isAdmin],
     queryFn: async () => {
       if (!actor) return [0n, 0n, 0n] as [bigint, bigint, bigint];
-      return isAdmin
-        ? actor.countAllTasksByStatus()
-        : actor.countTasksByStatus();
+      return actor.countTasksByStatus();
     },
     enabled: !!actor && !isFetching,
   });
@@ -124,16 +127,25 @@ export function useCompletionDates() {
     queryKey: ["completionDates"],
     queryFn: async () => {
       if (!actor) return new Map<number, bigint>();
-      const actorAny = actor as any;
-      if (typeof actorAny.getCompletionDates !== "function") {
-        return new Map<number, bigint>();
-      }
-      const tuples: [bigint, bigint][] = await actorAny.getCompletionDates();
+      const records: CompletionDate[] = await actor.getCompletionDates();
       const map = new Map<number, bigint>();
-      for (const [id, ts] of tuples) {
-        map.set(Number(id), ts);
+      for (const r of records) {
+        map.set(Number(r.taskId), r.completionTimestamp);
       }
       return map;
+    },
+    enabled: !!actor && !isFetching,
+  });
+}
+
+export function useAdminCount() {
+  const { actor, isFetching } = useActor();
+  return useQuery<number>({
+    queryKey: ["adminCount"],
+    queryFn: async () => {
+      if (!actor) return 0;
+      const count = await actor.getAdminCount();
+      return Number(count);
     },
     enabled: !!actor && !isFetching,
   });
@@ -168,18 +180,30 @@ export function useCreateTask() {
       title,
       description,
       assignee,
-      dueDate,
+      targetDate,
       priority,
+      frequency,
+      frequencyDays,
     }: {
       title: string;
       description: string;
       assignee: string;
-      dueDate: string;
+      targetDate: string;
       priority: Priority;
+      frequency: FrequencyType;
+      frequencyDays: string;
     }) => {
       if (!actor) throw new Error("No actor");
       const principal = Principal.fromText(assignee);
-      return actor.createTask(title, description, principal, dueDate, priority);
+      return actor.createTask(
+        title,
+        description,
+        principal,
+        targetDate,
+        priority,
+        frequency,
+        frequencyDays,
+      );
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["allTasks"] });
@@ -228,6 +252,21 @@ export function useAssignRole() {
   });
 }
 
+export function useAssignUserRoleAsAdmin() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ user, role }: { user: string; role: UserRole }) => {
+      if (!actor) throw new Error("No actor");
+      const principal = Principal.fromText(user);
+      return actor.assignUserRoleAsAdmin(principal, role);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["adminCount"] });
+    },
+  });
+}
+
 export function useBootstrapAdmin() {
   const { actor } = useActor();
   const queryClient = useQueryClient();
@@ -240,6 +279,7 @@ export function useBootstrapAdmin() {
       queryClient.invalidateQueries({ queryKey: ["isAdmin"] });
       queryClient.invalidateQueries({ queryKey: ["callerRole"] });
       queryClient.invalidateQueries({ queryKey: ["hasAnyAdmin"] });
+      queryClient.invalidateQueries({ queryKey: ["adminCount"] });
     },
   });
 }

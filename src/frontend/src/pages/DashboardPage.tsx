@@ -98,7 +98,7 @@ function TaskRow({ task, index }: { task: Task; index: number }) {
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium truncate">{task.title}</p>
         <p className="text-xs text-muted-foreground mt-0.5">
-          Due: {task.dueDate}
+          Target Date: {task.targetDate}
         </p>
       </div>
       <PriorityBadge priority={task.priority} />

@@ -1,28 +1,16 @@
 import Map "mo:core/Map";
-import List "mo:core/List";
 import Principal "mo:core/Principal";
 import Time "mo:core/Time";
 import Runtime "mo:core/Runtime";
-import Text "mo:core/Text";
+import Iter "mo:core/Iter";
+
 
 import MixinAuthorization "authorization/MixinAuthorization";
 import AccessControl "authorization/access-control";
 
-
 actor {
   let accessControlState = AccessControl.initState();
   include MixinAuthorization(accessControlState);
-
-  public type Task = {
-    id : Nat;
-    title : Text;
-    description : Text;
-    assignee : Principal;
-    dueDate : Text;
-    priority : Priority;
-    status : TaskStatus;
-    createdAt : Int;
-  };
 
   public type Priority = {
     #low;
@@ -36,6 +24,38 @@ actor {
     #done;
   };
 
+  public type FrequencyType = {
+    #none;
+    #daily;
+    #weekly;
+    #monthly;
+  };
+
+  // Legacy task type (without frequency fields) -- kept for stable migration
+  public type TaskLegacy = {
+    id : Nat;
+    title : Text;
+    description : Text;
+    assignee : Principal;
+    targetDate : Text;
+    priority : Priority;
+    status : TaskStatus;
+    createdAt : Int;
+  };
+
+  public type Task = {
+    id : Nat;
+    title : Text;
+    description : Text;
+    assignee : Principal;
+    targetDate : Text;
+    priority : Priority;
+    status : TaskStatus;
+    createdAt : Int;
+    frequency : FrequencyType;
+    frequencyDays : Text;
+  };
+
   public type UserProfile = {
     name : Text;
     email : Text;
@@ -46,18 +66,56 @@ actor {
     profile : UserProfile;
   };
 
-  let tasks = Map.empty<Nat, Task>();
+  public type CompletionDate = {
+    taskId : Nat;
+    completionTimestamp : Int;
+  };
+
+  // Legacy stable map absorbs old task data on upgrade (compatible with old Task type)
+  let tasks = Map.empty<Nat, TaskLegacy>();
+  // New stable map stores tasks with frequency fields
+  let tasksV2 = Map.empty<Nat, Task>();
   var nextTaskId = 0;
   let userProfiles = Map.empty<Principal, UserProfile>();
-  // Separate stable map for completion timestamps (avoids Task type migration)
   let taskCompletedAt = Map.empty<Nat, Int>();
 
-  // Bootstrap: allows the very first user to claim admin if no admin exists yet
+  // On upgrade: migrate any legacy tasks into tasksV2 with default frequency values
+  system func postupgrade() {
+    for ((id, t) in tasks.entries()) {
+      if (tasksV2.get(id) == null) {
+        tasksV2.add(id, {
+          id = t.id;
+          title = t.title;
+          description = t.description;
+          assignee = t.assignee;
+          targetDate = t.targetDate;
+          priority = t.priority;
+          status = t.status;
+          createdAt = t.createdAt;
+          frequency = #none;
+          frequencyDays = "";
+        });
+      };
+    };
+  };
+
+  private func countAdmins() : Nat {
+    var count = 0;
+    for ((principal, role) in accessControlState.userRoles.entries()) {
+      switch (role) {
+        case (#admin) { count += 1 };
+        case (_) {};
+      };
+    };
+    count;
+  };
+
   public shared ({ caller }) func bootstrapAdmin() : async Bool {
     if (caller.isAnonymous()) {
-      return false;
+      Runtime.trap("Unauthorized: Anonymous principals cannot claim admin");
     };
-    if (accessControlState.adminAssigned) {
+    let adminCount = countAdmins();
+    if (adminCount > 0) {
       if (AccessControl.isAdmin(accessControlState, caller)) {
         return true;
       };
@@ -65,11 +123,31 @@ actor {
     };
     accessControlState.userRoles.add(caller, #admin);
     accessControlState.adminAssigned := true;
-    return true;
+    true;
   };
 
   public query func hasAnyAdmin() : async Bool {
     accessControlState.adminAssigned;
+  };
+
+  public query func getAdminCount() : async Nat {
+    countAdmins();
+  };
+
+  public shared ({ caller }) func assignUserRoleAsAdmin(user : Principal, role : AccessControl.UserRole) : async () {
+    if (not (AccessControl.isAdmin(accessControlState, caller))) {
+      Runtime.trap("Unauthorized: Only admins can assign roles");
+    };
+    switch (role) {
+      case (#admin) {
+        let currentAdminCount = countAdmins();
+        if (currentAdminCount >= 10) {
+          Runtime.trap("Cannot assign admin role: Maximum of 10 admins reached");
+        };
+      };
+      case (_) {};
+    };
+    AccessControl.assignRole(accessControlState, caller, user, role);
   };
 
   public query ({ caller }) func getCallerUserProfile() : async ?UserProfile {
@@ -79,11 +157,11 @@ actor {
     userProfiles.get(caller);
   };
 
-  public query ({ caller }) func getUserProfile(user : Principal) : async ?UserProfile {
-    if (caller != user and not AccessControl.isAdmin(accessControlState, caller)) {
+  public query ({ caller }) func getUserProfile(userPrincipal : Principal) : async ?UserProfile {
+    if (caller != userPrincipal and not AccessControl.isAdmin(accessControlState, caller)) {
       Runtime.trap("Unauthorized: Can only view your own profile");
     };
-    userProfiles.get(user);
+    userProfiles.get(userPrincipal);
   };
 
   public shared ({ caller }) func saveCallerUserProfile(profile : UserProfile) : async () {
@@ -93,45 +171,36 @@ actor {
     userProfiles.add(caller, profile);
   };
 
-  // Get all user profiles (admin only) - for Employee Panel
   public query ({ caller }) func getAllUserProfiles() : async [UserProfileEntry] {
     if (not (AccessControl.isAdmin(accessControlState, caller))) {
       Runtime.trap("Unauthorized: Only admins can view all user profiles");
     };
-    let entries = List.empty<UserProfileEntry>();
-    for ((p, profile) in userProfiles.entries()) {
-      entries.add({ principal = p; profile });
-    };
-    entries.toArray();
+    userProfiles.entries().map(func((p, profile)) { { principal = p; profile } }).toArray();
   };
 
-  // Get tasks for a specific employee (admin only)
   public query ({ caller }) func getTasksByEmployee(employee : Principal) : async [Task] {
     if (not (AccessControl.isAdmin(accessControlState, caller))) {
       Runtime.trap("Unauthorized: Only admins can view employee tasks");
     };
-    let result = List.empty<Task>();
-    for (task in tasks.values()) {
-      if (task.assignee == employee) {
-        result.add(task);
-      };
-    };
-    result.toArray();
+    tasksV2.values().filter(func(task) { task.assignee == employee }).toArray();
   };
 
-  // Get completion timestamps for all tasks (admin only)
-  public query ({ caller }) func getCompletionDates() : async [(Nat, Int)] {
+  public query ({ caller }) func getCompletionDates() : async [CompletionDate] {
     if (not (AccessControl.isAdmin(accessControlState, caller))) {
       Runtime.trap("Unauthorized: Only admins can view completion dates");
     };
-    let result = List.empty<(Nat, Int)>();
-    for ((id, ts) in taskCompletedAt.entries()) {
-      result.add((id, ts));
-    };
-    result.toArray();
+    taskCompletedAt.entries().map(func((id, ts)) { { taskId = id; completionTimestamp = ts } }).toArray();
   };
 
-  public shared ({ caller }) func createTask(title : Text, description : Text, assignee : Principal, dueDate : Text, priority : Priority) : async Nat {
+  public shared ({ caller }) func createTask(
+    title : Text,
+    description : Text,
+    assignee : Principal,
+    targetDate : Text,
+    priority : Priority,
+    frequency : FrequencyType,
+    frequencyDays : Text
+  ) : async Nat {
     if (not (AccessControl.isAdmin(accessControlState, caller))) {
       Runtime.trap("Unauthorized: Only admins can create tasks");
     };
@@ -144,13 +213,15 @@ actor {
       title;
       description;
       assignee;
-      dueDate;
+      targetDate;
       priority;
       status = #todo;
       createdAt = Time.now();
+      frequency;
+      frequencyDays;
     };
 
-    tasks.add(id, newTask);
+    tasksV2.add(id, newTask);
     id;
   };
 
@@ -158,8 +229,7 @@ actor {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
       Runtime.trap("Unauthorized: Only users can view tasks");
     };
-
-    switch (tasks.get(taskId)) {
+    switch (tasksV2.get(taskId)) {
       case (null) { null };
       case (?task) {
         if (task.assignee == caller or AccessControl.isAdmin(accessControlState, caller)) {
@@ -175,46 +245,36 @@ actor {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
       Runtime.trap("Unauthorized: Only users can view tasks");
     };
-
-    let myTasks = List.empty<Task>();
-    for (task in tasks.values()) {
-      if (task.assignee == caller) {
-        myTasks.add(task);
-      };
-    };
-    myTasks.toArray();
+    tasksV2.values().filter(func(task) { task.assignee == caller }).toArray();
   };
 
   public query ({ caller }) func getAllTasks() : async [Task] {
     if (not (AccessControl.isAdmin(accessControlState, caller))) {
       Runtime.trap("Unauthorized: Only admins can view all tasks");
     };
-    tasks.values().toArray();
+    tasksV2.values().toArray();
   };
 
   public shared ({ caller }) func updateTaskStatus(taskId : Nat, newStatus : TaskStatus) : async () {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
       Runtime.trap("Unauthorized: Only users can update task status");
     };
-
-    switch (tasks.get(taskId)) {
+    switch (tasksV2.get(taskId)) {
       case (null) { Runtime.trap("Task not found") };
       case (?task) {
         if (task.assignee != caller and not AccessControl.isAdmin(accessControlState, caller)) {
           Runtime.trap("Unauthorized: Only assignee or admin can update status");
         };
-        // Record completion timestamp when marked done
         switch (newStatus) {
           case (#done) {
             taskCompletedAt.add(taskId, Time.now());
           };
           case (_) {
-            // Remove completion timestamp if status is changed away from done
             taskCompletedAt.remove(taskId);
           };
         };
         let updatedTask : Task = { task with status = newStatus };
-        tasks.add(taskId, updatedTask);
+        tasksV2.add(taskId, updatedTask);
       };
     };
   };
@@ -223,11 +283,10 @@ actor {
     if (not (AccessControl.isAdmin(accessControlState, caller))) {
       Runtime.trap("Unauthorized: Only admins can delete tasks");
     };
-
-    switch (tasks.get(taskId)) {
+    switch (tasksV2.get(taskId)) {
       case (null) { Runtime.trap("Task not found") };
       case (?_) {
-        tasks.remove(taskId);
+        tasksV2.remove(taskId);
         taskCompletedAt.remove(taskId);
       };
     };
@@ -237,13 +296,12 @@ actor {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
       Runtime.trap("Unauthorized: Only users can view task statistics");
     };
-
     var todoCount = 0;
     var inProgressCount = 0;
     var doneCount = 0;
-
-    for (task in tasks.values()) {
-      if (task.assignee == caller) {
+    let isAdmin = AccessControl.isAdmin(accessControlState, caller);
+    for (task in tasksV2.values()) {
+      if (isAdmin or task.assignee == caller) {
         switch (task.status) {
           case (#todo) { todoCount += 1 };
           case (#inProgress) { inProgressCount += 1 };
@@ -251,27 +309,6 @@ actor {
         };
       };
     };
-
-    (todoCount, inProgressCount, doneCount);
-  };
-
-  public query ({ caller }) func countAllTasksByStatus() : async (Nat, Nat, Nat) {
-    if (not (AccessControl.isAdmin(accessControlState, caller))) {
-      Runtime.trap("Unauthorized: Only admins can access all task counts");
-    };
-
-    var todoCount = 0;
-    var inProgressCount = 0;
-    var doneCount = 0;
-
-    for (task in tasks.values()) {
-      switch (task.status) {
-        case (#todo) { todoCount += 1 };
-        case (#inProgress) { inProgressCount += 1 };
-        case (#done) { doneCount += 1 };
-      };
-    };
-
     (todoCount, inProgressCount, doneCount);
   };
 };

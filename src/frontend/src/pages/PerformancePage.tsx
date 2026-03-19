@@ -25,13 +25,13 @@ function classifyTask(
 ): "onTime" | "delayed" | "pending" {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const due = new Date(task.dueDate);
+  const due = new Date(task.targetDate);
   due.setHours(23, 59, 59, 999);
 
   if (task.status === TaskStatus.done) {
     const ts = completionDates.get(Number(task.id));
     if (ts !== undefined) {
-      const completedDate = new Date(Number(ts) / 1_000_000);
+      const completedDate = new Date(Number(ts / 1_000_000n));
       return completedDate <= due ? "onTime" : "delayed";
     }
     // Done but no timestamp — treat as on time
@@ -39,7 +39,7 @@ function classifyTask(
   }
 
   // Not done
-  const dueDay = new Date(task.dueDate);
+  const dueDay = new Date(task.targetDate);
   dueDay.setHours(0, 0, 0, 0);
   if (dueDay < today) return "delayed";
   return "pending";

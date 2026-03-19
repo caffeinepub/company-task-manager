@@ -6,6 +6,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -19,8 +20,18 @@ import { Textarea } from "@/components/ui/textarea";
 import { Loader2, PlusCircle } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
-import { Priority } from "../backend.d";
+import { FrequencyType, Priority } from "../backend.d";
 import { useCreateTask, useIsAdmin } from "../hooks/useQueries";
+
+const WEEKDAYS = [
+  { label: "Monday", value: "Mon" },
+  { label: "Tuesday", value: "Tue" },
+  { label: "Wednesday", value: "Wed" },
+  { label: "Thursday", value: "Thu" },
+  { label: "Friday", value: "Fri" },
+  { label: "Saturday", value: "Sat" },
+  { label: "Sunday", value: "Sun" },
+];
 
 export default function CreateTaskPage() {
   const { data: isAdmin } = useIsAdmin();
@@ -29,16 +40,40 @@ export default function CreateTaskPage() {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [assignee, setAssignee] = useState("");
-  const [dueDate, setDueDate] = useState("");
+  const [targetDate, setTargetDate] = useState("");
   const [priority, setPriority] = useState<Priority>(Priority.medium);
+  const [frequency, setFrequency] = useState<FrequencyType>(FrequencyType.none);
+  const [selectedWeekdays, setSelectedWeekdays] = useState<string[]>([]);
+  const [monthDay, setMonthDay] = useState("1");
   const [error, setError] = useState("");
+
+  function toggleWeekday(day: string) {
+    setSelectedWeekdays((prev) =>
+      prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day],
+    );
+  }
+
+  function buildFrequencyDays(): string {
+    if (frequency === FrequencyType.weekly) {
+      return selectedWeekdays.join(",");
+    }
+    if (frequency === FrequencyType.monthly) {
+      return monthDay;
+    }
+    return "";
+  }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
 
-    if (!title.trim() || !assignee.trim() || !dueDate) {
+    if (!title.trim() || !assignee.trim() || !targetDate) {
       setError("Please fill in all required fields.");
+      return;
+    }
+
+    if (frequency === FrequencyType.weekly && selectedWeekdays.length === 0) {
+      setError("Please select at least one day for weekly frequency.");
       return;
     }
 
@@ -47,8 +82,10 @@ export default function CreateTaskPage() {
         title: title.trim(),
         description: description.trim(),
         assignee: assignee.trim(),
-        dueDate,
+        targetDate,
         priority,
+        frequency,
+        frequencyDays: buildFrequencyDays(),
       },
       {
         onSuccess: () => {
@@ -56,8 +93,11 @@ export default function CreateTaskPage() {
           setTitle("");
           setDescription("");
           setAssignee("");
-          setDueDate("");
+          setTargetDate("");
           setPriority(Priority.medium);
+          setFrequency(FrequencyType.none);
+          setSelectedWeekdays([]);
+          setMonthDay("1");
         },
         onError: (err) => {
           setError(
@@ -148,15 +188,15 @@ export default function CreateTaskPage() {
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
-                <Label htmlFor="dueDate">
-                  Due Date <span className="text-destructive">*</span>
+                <Label htmlFor="targetDate">
+                  Target Date <span className="text-destructive">*</span>
                 </Label>
                 <Input
-                  id="dueDate"
+                  id="targetDate"
                   type="date"
-                  value={dueDate}
-                  onChange={(e) => setDueDate(e.target.value)}
-                  data-ocid="create_task.due_date.input"
+                  value={targetDate}
+                  onChange={(e) => setTargetDate(e.target.value)}
+                  data-ocid="create_task.target_date.input"
                 />
               </div>
 
@@ -177,6 +217,88 @@ export default function CreateTaskPage() {
                 </Select>
               </div>
             </div>
+
+            {/* Frequency */}
+            <div className="space-y-1.5">
+              <Label>Task Frequency</Label>
+              <Select
+                value={frequency}
+                onValueChange={(v) => {
+                  setFrequency(v as FrequencyType);
+                  setSelectedWeekdays([]);
+                }}
+              >
+                <SelectTrigger data-ocid="create_task.frequency.select">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={FrequencyType.none}>
+                    No Repeat (One-time)
+                  </SelectItem>
+                  <SelectItem value={FrequencyType.daily}>Daily</SelectItem>
+                  <SelectItem value={FrequencyType.weekly}>Weekly</SelectItem>
+                  <SelectItem value={FrequencyType.monthly}>Monthly</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Choose how often this task should appear for the assignee.
+              </p>
+            </div>
+
+            {/* Weekly day picker */}
+            {frequency === FrequencyType.weekly && (
+              <div className="space-y-2">
+                <Label>
+                  Select Days <span className="text-destructive">*</span>
+                </Label>
+                <div className="grid grid-cols-2 gap-2">
+                  {WEEKDAYS.map((day) => (
+                    <div
+                      key={day.value}
+                      className="flex items-center gap-2 cursor-pointer"
+                    >
+                      <Checkbox
+                        id={`weekday-${day.value}`}
+                        checked={selectedWeekdays.includes(day.value)}
+                        onCheckedChange={() => toggleWeekday(day.value)}
+                      />
+                      <Label
+                        htmlFor={`weekday-${day.value}`}
+                        className="text-sm font-normal cursor-pointer"
+                      >
+                        {day.label}
+                      </Label>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Monthly day picker */}
+            {frequency === FrequencyType.monthly && (
+              <div className="space-y-1.5">
+                <Label htmlFor="monthDay">
+                  Day of Month <span className="text-destructive">*</span>
+                </Label>
+                <Select value={monthDay} onValueChange={setMonthDay}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Array.from({ length: 31 }, (_, i) => String(i + 1)).map(
+                      (d) => (
+                        <SelectItem key={d} value={d}>
+                          {d}
+                        </SelectItem>
+                      ),
+                    )}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Task will appear on this day every month.
+                </p>
+              </div>
+            )}
 
             {error && (
               <p

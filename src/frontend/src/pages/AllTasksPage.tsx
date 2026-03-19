@@ -11,7 +11,15 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Calendar } from "@/components/ui/calendar";
 import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -21,7 +29,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ClipboardList, Trash2 } from "lucide-react";
+import { format, isWithinInterval, parseISO } from "date-fns";
+import { CalendarIcon, ClipboardList, Search, Trash2, X } from "lucide-react";
+import { useState } from "react";
 import { toast } from "sonner";
 import { Priority, TaskStatus } from "../backend.d";
 import type { Task } from "../backend.d";
@@ -67,7 +77,6 @@ function StatusBadge({ status }: { status: TaskStatus }) {
 
 function DeleteButton({ task, index }: { task: Task; index: number }) {
   const deleteTask = useDeleteTask();
-
   return (
     <AlertDialog>
       <AlertDialogTrigger asChild>
@@ -113,6 +122,12 @@ export default function AllTasksPage() {
   const { data: isAdmin } = useIsAdmin();
   const { data: tasks, isLoading } = useAllTasks();
 
+  const [nameFilter, setNameFilter] = useState("");
+  const [startDate, setStartDate] = useState<Date | undefined>(undefined);
+  const [endDate, setEndDate] = useState<Date | undefined>(undefined);
+  const [startOpen, setStartOpen] = useState(false);
+  const [endOpen, setEndOpen] = useState(false);
+
   if (!isAdmin) {
     return (
       <div className="max-w-4xl mx-auto">
@@ -127,6 +142,40 @@ export default function AllTasksPage() {
     );
   }
 
+  const filteredTasks = (tasks ?? []).filter((task) => {
+    // Name filter
+    if (nameFilter.trim()) {
+      const q = nameFilter.trim().toLowerCase();
+      if (!task.title.toLowerCase().includes(q)) return false;
+    }
+    // Date range filter based on targetDate
+    if (startDate || endDate) {
+      if (!task.targetDate) return false;
+      try {
+        const taskDate = parseISO(task.targetDate);
+        if (startDate && endDate) {
+          if (!isWithinInterval(taskDate, { start: startDate, end: endDate }))
+            return false;
+        } else if (startDate) {
+          if (taskDate < startDate) return false;
+        } else if (endDate) {
+          if (taskDate > endDate) return false;
+        }
+      } catch {
+        return false;
+      }
+    }
+    return true;
+  });
+
+  const clearFilters = () => {
+    setNameFilter("");
+    setStartDate(undefined);
+    setEndDate(undefined);
+  };
+
+  const hasFilters = nameFilter.trim() || startDate || endDate;
+
   return (
     <div className="max-w-6xl mx-auto space-y-5 animate-fade-up">
       <div>
@@ -135,9 +184,116 @@ export default function AllTasksPage() {
           All Tasks
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
-          {tasks?.length ?? 0} total tasks
+          {filteredTasks.length} of {tasks?.length ?? 0} tasks
         </p>
       </div>
+
+      {/* Filters */}
+      <Card className="shadow-card">
+        <CardContent className="p-4">
+          <div className="flex flex-col sm:flex-row gap-3 items-end">
+            {/* Name search */}
+            <div className="flex-1 space-y-1">
+              <Label className="text-xs text-muted-foreground">
+                Search by Name
+              </Label>
+              <div className="relative">
+                <Search
+                  size={14}
+                  className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+                />
+                <Input
+                  className="pl-8 h-9"
+                  placeholder="Task name..."
+                  value={nameFilter}
+                  onChange={(e) => setNameFilter(e.target.value)}
+                />
+              </div>
+            </div>
+
+            {/* Start Date */}
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">From Date</Label>
+              <Popover open={startOpen} onOpenChange={setStartOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className="h-9 w-36 justify-start text-left text-sm font-normal"
+                  >
+                    <CalendarIcon
+                      size={14}
+                      className="mr-2 text-muted-foreground"
+                    />
+                    {startDate ? (
+                      format(startDate, "dd MMM yyyy")
+                    ) : (
+                      <span className="text-muted-foreground">Pick date</span>
+                    )}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="single"
+                    selected={startDate}
+                    onSelect={(d) => {
+                      setStartDate(d);
+                      setStartOpen(false);
+                    }}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
+            </div>
+
+            {/* End Date */}
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">To Date</Label>
+              <Popover open={endOpen} onOpenChange={setEndOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className="h-9 w-36 justify-start text-left text-sm font-normal"
+                  >
+                    <CalendarIcon
+                      size={14}
+                      className="mr-2 text-muted-foreground"
+                    />
+                    {endDate ? (
+                      format(endDate, "dd MMM yyyy")
+                    ) : (
+                      <span className="text-muted-foreground">Pick date</span>
+                    )}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="single"
+                    selected={endDate}
+                    onSelect={(d) => {
+                      setEndDate(d);
+                      setEndOpen(false);
+                    }}
+                    disabled={startDate ? { before: startDate } : undefined}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
+            </div>
+
+            {/* Clear */}
+            {hasFilters && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={clearFilters}
+                className="h-9 gap-1 text-muted-foreground hover:text-foreground"
+              >
+                <X size={14} /> Clear
+              </Button>
+            )}
+          </div>
+        </CardContent>
+      </Card>
 
       <Card className="shadow-card">
         <CardContent className="p-0">
@@ -147,7 +303,7 @@ export default function AllTasksPage() {
                 <Skeleton key={i} className="h-12 w-full" />
               ))}
             </div>
-          ) : !tasks || tasks.length === 0 ? (
+          ) : filteredTasks.length === 0 ? (
             <div
               className="py-16 text-center"
               data-ocid="all_tasks.empty_state"
@@ -157,7 +313,9 @@ export default function AllTasksPage() {
                 className="mx-auto mb-3 text-muted-foreground opacity-40"
               />
               <p className="text-sm text-muted-foreground">
-                No tasks created yet.
+                {hasFilters
+                  ? "No tasks match your filters."
+                  : "No tasks created yet."}
               </p>
             </div>
           ) : (
@@ -171,13 +329,13 @@ export default function AllTasksPage() {
                   <TableHead>Priority</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="hidden sm:table-cell">
-                    Due Date
+                    Target Date
                   </TableHead>
                   <TableHead className="w-12" />
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {tasks.map((task, i) => (
+                {filteredTasks.map((task, i) => (
                   <TableRow
                     key={task.id.toString()}
                     data-ocid={`all_tasks.row.${i + 1}`}
@@ -202,7 +360,7 @@ export default function AllTasksPage() {
                       <StatusBadge status={task.status} />
                     </TableCell>
                     <TableCell className="hidden sm:table-cell text-sm">
-                      {task.dueDate}
+                      {task.targetDate}
                     </TableCell>
                     <TableCell>
                       <DeleteButton task={task} index={i} />

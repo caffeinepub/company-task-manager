@@ -14,6 +14,7 @@ import { useState } from "react";
 import { Priority, TaskStatus } from "../backend.d";
 import type { Task, UserProfileEntry } from "../backend.d";
 import {
+  useAllTasks,
   useAllUserProfiles,
   useCompletionDates,
   useIsAdmin,
@@ -84,7 +85,7 @@ function tasksToRows(tasks: Task[], employeeName: string): string[][] {
     t.title,
     t.description,
     employeeName,
-    t.dueDate,
+    t.targetDate,
     priorityLabel(t.priority),
     statusLabel(t.status),
     new Date(Number(t.createdAt) / 1_000_000).toLocaleString(),
@@ -99,13 +100,15 @@ function completedTasksToRows(
   return tasks.map((t) => {
     const ts = completionDates.get(Number(t.id));
     const completedDateStr =
-      ts !== undefined ? new Date(Number(ts) / 1_000_000).toLocaleString() : "";
+      ts !== undefined
+        ? new Date(Number(ts / 1_000_000n)).toLocaleString()
+        : "";
     return [
       String(t.id),
       t.title,
       t.description,
       employeeName,
-      t.dueDate,
+      t.targetDate,
       priorityLabel(t.priority),
       statusLabel(t.status),
       new Date(Number(t.createdAt) / 1_000_000).toLocaleString(),
@@ -119,7 +122,7 @@ const CSV_HEADERS = [
   "Title",
   "Description",
   "Employee",
-  "Due Date",
+  "Target Date",
   "Priority",
   "Status",
   "Created At",
@@ -139,7 +142,7 @@ function EmployeeTaskView({
   const { data: completionDates = new Map<number, bigint>() } =
     useCompletionDates();
   const today = getTodayString();
-  const todayTasks = tasks.filter((t) => t.dueDate === today);
+  const todayTasks = tasks.filter((t) => t.targetDate === today);
   const employeeName = entry.profile.name || principalText;
 
   function handleExportAll() {
@@ -231,7 +234,7 @@ function EmployeeTaskView({
               No tasks due today.
             </p>
           ) : (
-            <TaskTable tasks={todayTasks} />
+            <TaskTable tasks={todayTasks} completionDates={completionDates} />
           )}
         </CardContent>
       </Card>
@@ -252,7 +255,7 @@ function EmployeeTaskView({
               No tasks assigned.
             </p>
           ) : (
-            <TaskTable tasks={tasks} />
+            <TaskTable tasks={tasks} completionDates={completionDates} />
           )}
         </CardContent>
       </Card>
@@ -260,46 +263,126 @@ function EmployeeTaskView({
   );
 }
 
-function TaskTable({ tasks }: { tasks: Task[] }) {
+function TaskTable({
+  tasks,
+  completionDates,
+}: { tasks: Task[]; completionDates: Map<number, bigint> }) {
   return (
     <div className="overflow-x-auto">
       <Table>
         <TableHeader>
           <TableRow>
             <TableHead>Title</TableHead>
-            <TableHead>Due Date</TableHead>
+            <TableHead>Target Date</TableHead>
             <TableHead>Priority</TableHead>
             <TableHead>Status</TableHead>
+            <TableHead>Completed At</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          {tasks.map((task) => (
-            <TableRow key={String(task.id)}>
-              <TableCell className="font-medium">{task.title}</TableCell>
-              <TableCell>{task.dueDate}</TableCell>
-              <TableCell>
-                <Badge
-                  variant={
-                    task.priority === Priority.high
-                      ? "destructive"
-                      : task.priority === Priority.medium
-                        ? "secondary"
-                        : "outline"
-                  }
-                >
-                  {priorityLabel(task.priority)}
-                </Badge>
-              </TableCell>
-              <TableCell>
-                <Badge variant={statusVariant(task.status)}>
-                  {statusLabel(task.status)}
-                </Badge>
-              </TableCell>
-            </TableRow>
-          ))}
+          {tasks.map((task) => {
+            const ts = completionDates.get(Number(task.id));
+            const completedAt =
+              ts !== undefined
+                ? new Date(Number(ts / 1_000_000n)).toLocaleString()
+                : "-";
+            return (
+              <TableRow key={String(task.id)}>
+                <TableCell className="font-medium">{task.title}</TableCell>
+                <TableCell>{task.targetDate}</TableCell>
+                <TableCell>
+                  <Badge
+                    variant={
+                      task.priority === Priority.high
+                        ? "destructive"
+                        : task.priority === Priority.medium
+                          ? "secondary"
+                          : "outline"
+                    }
+                  >
+                    {priorityLabel(task.priority)}
+                  </Badge>
+                </TableCell>
+                <TableCell>
+                  <Badge variant={statusVariant(task.status)}>
+                    {statusLabel(task.status)}
+                  </Badge>
+                </TableCell>
+                <TableCell className="text-xs text-muted-foreground">
+                  {task.status === TaskStatus.done ? completedAt : "-"}
+                </TableCell>
+              </TableRow>
+            );
+          })}
         </TableBody>
       </Table>
     </div>
+  );
+}
+
+// Combined export button component that uses all tasks
+function ExportAllEmployeesCompletedButton({
+  profiles,
+}: {
+  profiles: UserProfileEntry[];
+}) {
+  const { data: allTasks = [] } = useAllTasks();
+  const { data: completionDates = new Map<number, bigint>() } =
+    useCompletionDates();
+
+  function handleExportAllCompleted() {
+    // Build a map of principal -> name
+    const nameMap = new Map<string, string>();
+    for (const entry of profiles) {
+      nameMap.set(
+        entry.principal.toText(),
+        entry.profile.name || entry.principal.toText(),
+      );
+    }
+
+    // Group completed tasks by employee, vertically
+    const rows: string[][] = [];
+    for (const entry of profiles) {
+      const principalText = entry.principal.toText();
+      const employeeName = nameMap.get(principalText) ?? principalText;
+      const employeeDoneTasks = allTasks.filter(
+        (t) =>
+          t.assignee.toText() === principalText && t.status === TaskStatus.done,
+      );
+      if (employeeDoneTasks.length === 0) continue;
+      // Add a blank separator row with employee name as header
+      rows.push([`--- ${employeeName} ---`, "", "", "", "", "", "", "", ""]);
+      for (const row of completedTasksToRows(
+        employeeDoneTasks,
+        employeeName,
+        completionDates,
+      )) {
+        rows.push(row);
+      }
+    }
+
+    if (rows.length === 0) {
+      return;
+    }
+
+    downloadCSV(
+      "all_employees_completed_tasks.csv",
+      rows,
+      COMPLETED_CSV_HEADERS,
+    );
+  }
+
+  return (
+    <Button
+      variant="default"
+      size="sm"
+      onClick={handleExportAllCompleted}
+      className="gap-1.5"
+      data-ocid="employee_panel.export_all_completed.button"
+    >
+      <Download size={14} />
+      Export All Employees Completed (CSV)
+    </Button>
   );
 }
 
@@ -336,13 +419,20 @@ export default function EmployeePanelPage() {
   return (
     <div className="max-w-2xl mx-auto animate-fade-up">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold flex items-center gap-2">
-          <Users size={22} className="text-primary" />
-          Employee Panel
-        </h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Click an employee to view their tasks and download CSV reports.
-        </p>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-bold flex items-center gap-2">
+              <Users size={22} className="text-primary" />
+              Employee Panel
+            </h1>
+            <p className="text-sm text-muted-foreground mt-1">
+              Click an employee to view their tasks and download CSV reports.
+            </p>
+          </div>
+          {profiles.length > 0 && (
+            <ExportAllEmployeesCompletedButton profiles={profiles} />
+          )}
+        </div>
       </div>
 
       {profiles.length === 0 ? (

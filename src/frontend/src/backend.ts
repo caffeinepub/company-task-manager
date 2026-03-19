@@ -89,15 +89,25 @@ export class ExternalBlob {
         return this;
     }
 }
+export interface CompletionDate {
+    taskId: bigint;
+    completionTimestamp: bigint;
+}
+export interface UserProfileEntry {
+    principal: Principal;
+    profile: UserProfile;
+}
 export interface Task {
     id: bigint;
     status: TaskStatus;
     assignee: Principal;
     title: string;
     createdAt: bigint;
-    dueDate: string;
     description: string;
+    targetDate: string;
     priority: Priority;
+    frequency: FrequencyType;
+    frequencyDays: string;
 }
 export interface UserProfile {
     name: string;
@@ -118,32 +128,36 @@ export enum UserRole {
     user = "user",
     guest = "guest"
 }
-export interface UserProfileEntry {
-    principal: Principal;
-    profile: UserProfile;
+export enum FrequencyType {
+    none = "none",
+    daily = "daily",
+    weekly = "weekly",
+    monthly = "monthly"
 }
 export interface backendInterface {
     _initializeAccessControlWithSecret(userSecret: string): Promise<void>;
     assignCallerUserRole(user: Principal, role: UserRole): Promise<void>;
+    assignUserRoleAsAdmin(user: Principal, role: UserRole): Promise<void>;
     bootstrapAdmin(): Promise<boolean>;
-    hasAnyAdmin(): Promise<boolean>;
-    countAllTasksByStatus(): Promise<[bigint, bigint, bigint]>;
     countTasksByStatus(): Promise<[bigint, bigint, bigint]>;
-    createTask(title: string, description: string, assignee: Principal, dueDate: string, priority: Priority): Promise<bigint>;
+    createTask(title: string, description: string, assignee: Principal, targetDate: string, priority: Priority, frequency: FrequencyType, frequencyDays: string): Promise<bigint>;
     deleteTask(taskId: bigint): Promise<void>;
+    getAdminCount(): Promise<bigint>;
     getAllTasks(): Promise<Array<Task>>;
     getAllUserProfiles(): Promise<Array<UserProfileEntry>>;
-    getTasksByEmployee(employee: Principal): Promise<Array<Task>>;
     getCallerUserProfile(): Promise<UserProfile | null>;
     getCallerUserRole(): Promise<UserRole>;
+    getCompletionDates(): Promise<Array<CompletionDate>>;
     getMyTasks(): Promise<Array<Task>>;
     getTask(taskId: bigint): Promise<Task | null>;
-    getUserProfile(user: Principal): Promise<UserProfile | null>;
+    getTasksByEmployee(employee: Principal): Promise<Array<Task>>;
+    getUserProfile(userPrincipal: Principal): Promise<UserProfile | null>;
+    hasAnyAdmin(): Promise<boolean>;
     isCallerAdmin(): Promise<boolean>;
     saveCallerUserProfile(profile: UserProfile): Promise<void>;
     updateTaskStatus(taskId: bigint, newStatus: TaskStatus): Promise<void>;
 }
-import type { Priority as _Priority, Task as _Task, TaskStatus as _TaskStatus, UserProfile as _UserProfile, UserRole as _UserRole } from "./declarations/backend.did.d.ts";
+import type { FrequencyType as _FrequencyType, Priority as _Priority, Task as _Task, TaskStatus as _TaskStatus, UserProfile as _UserProfile, UserRole as _UserRole } from "./declarations/backend.did.d.ts";
 export class Backend implements backendInterface {
     constructor(private actor: ActorSubclass<_SERVICE>, private _uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, private _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, private processError?: (error: unknown) => never){}
     async _initializeAccessControlWithSecret(arg0: string): Promise<void> {
@@ -174,6 +188,20 @@ export class Backend implements backendInterface {
             return result;
         }
     }
+    async assignUserRoleAsAdmin(arg0: Principal, arg1: UserRole): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.assignUserRoleAsAdmin(arg0, to_candid_UserRole_n1(this._uploadFile, this._downloadFile, arg1));
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.assignUserRoleAsAdmin(arg0, to_candid_UserRole_n1(this._uploadFile, this._downloadFile, arg1));
+            return result;
+        }
+    }
     async bootstrapAdmin(): Promise<boolean> {
         if (this.processError) {
             try {
@@ -186,42 +214,6 @@ export class Backend implements backendInterface {
         } else {
             const result = await this.actor.bootstrapAdmin();
             return result;
-        }
-    }
-    async hasAnyAdmin(): Promise<boolean> {
-        if (this.processError) {
-            try {
-                const result = await this.actor.hasAnyAdmin();
-                return result;
-            } catch (e) {
-                this.processError(e);
-                throw new Error("unreachable");
-            }
-        } else {
-            const result = await this.actor.hasAnyAdmin();
-            return result;
-        }
-    }
-    async countAllTasksByStatus(): Promise<[bigint, bigint, bigint]> {
-        if (this.processError) {
-            try {
-                const result = await this.actor.countAllTasksByStatus();
-                return [
-                    result[0],
-                    result[1],
-                    result[2]
-                ];
-            } catch (e) {
-                this.processError(e);
-                throw new Error("unreachable");
-            }
-        } else {
-            const result = await this.actor.countAllTasksByStatus();
-            return [
-                result[0],
-                result[1],
-                result[2]
-            ];
         }
     }
     async countTasksByStatus(): Promise<[bigint, bigint, bigint]> {
@@ -246,17 +238,17 @@ export class Backend implements backendInterface {
             ];
         }
     }
-    async createTask(arg0: string, arg1: string, arg2: Principal, arg3: string, arg4: Priority): Promise<bigint> {
+    async createTask(arg0: string, arg1: string, arg2: Principal, arg3: string, arg4: Priority, arg5: FrequencyType, arg6: string): Promise<bigint> {
         if (this.processError) {
             try {
-                const result = await this.actor.createTask(arg0, arg1, arg2, arg3, to_candid_Priority_n3(this._uploadFile, this._downloadFile, arg4));
+                const result = await this.actor.createTask(arg0, arg1, arg2, arg3, to_candid_Priority_n3(this._uploadFile, this._downloadFile, arg4), to_candid_FrequencyType(this._uploadFile, this._downloadFile, arg5), arg6);
                 return result;
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
-            const result = await this.actor.createTask(arg0, arg1, arg2, arg3, to_candid_Priority_n3(this._uploadFile, this._downloadFile, arg4));
+            const result = await this.actor.createTask(arg0, arg1, arg2, arg3, to_candid_Priority_n3(this._uploadFile, this._downloadFile, arg4), to_candid_FrequencyType(this._uploadFile, this._downloadFile, arg5), arg6);
             return result;
         }
     }
@@ -271,6 +263,20 @@ export class Backend implements backendInterface {
             }
         } else {
             const result = await this.actor.deleteTask(arg0);
+            return result;
+        }
+    }
+    async getAdminCount(): Promise<bigint> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getAdminCount();
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getAdminCount();
             return result;
         }
     }
@@ -292,28 +298,14 @@ export class Backend implements backendInterface {
         if (this.processError) {
             try {
                 const result = await this.actor.getAllUserProfiles();
-                return result.map((e: any) => ({ principal: e.principal, profile: e.profile }));
+                return result;
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
             const result = await this.actor.getAllUserProfiles();
-            return result.map((e: any) => ({ principal: e.principal, profile: e.profile }));
-        }
-    }
-    async getTasksByEmployee(arg0: Principal): Promise<Array<Task>> {
-        if (this.processError) {
-            try {
-                const result = await this.actor.getTasksByEmployee(arg0);
-                return from_candid_vec_n5(this._uploadFile, this._downloadFile, result);
-            } catch (e) {
-                this.processError(e);
-                throw new Error("unreachable");
-            }
-        } else {
-            const result = await this.actor.getTasksByEmployee(arg0);
-            return from_candid_vec_n5(this._uploadFile, this._downloadFile, result);
+            return result;
         }
     }
     async getCallerUserProfile(): Promise<UserProfile | null> {
@@ -344,6 +336,20 @@ export class Backend implements backendInterface {
             return from_candid_UserRole_n13(this._uploadFile, this._downloadFile, result);
         }
     }
+    async getCompletionDates(): Promise<Array<CompletionDate>> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getCompletionDates();
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getCompletionDates();
+            return result;
+        }
+    }
     async getMyTasks(): Promise<Array<Task>> {
         if (this.processError) {
             try {
@@ -372,6 +378,20 @@ export class Backend implements backendInterface {
             return from_candid_opt_n15(this._uploadFile, this._downloadFile, result);
         }
     }
+    async getTasksByEmployee(arg0: Principal): Promise<Array<Task>> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getTasksByEmployee(arg0);
+                return from_candid_vec_n5(this._uploadFile, this._downloadFile, result);
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getTasksByEmployee(arg0);
+            return from_candid_vec_n5(this._uploadFile, this._downloadFile, result);
+        }
+    }
     async getUserProfile(arg0: Principal): Promise<UserProfile | null> {
         if (this.processError) {
             try {
@@ -384,6 +404,20 @@ export class Backend implements backendInterface {
         } else {
             const result = await this.actor.getUserProfile(arg0);
             return from_candid_opt_n12(this._uploadFile, this._downloadFile, result);
+        }
+    }
+    async hasAnyAdmin(): Promise<boolean> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.hasAnyAdmin();
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.hasAnyAdmin();
+            return result;
         }
     }
     async isCallerAdmin(): Promise<boolean> {
@@ -453,8 +487,8 @@ function from_candid_record_n7(_uploadFile: (file: ExternalBlob) => Promise<Uint
     assignee: Principal;
     title: string;
     createdAt: bigint;
-    dueDate: string;
     description: string;
+    targetDate: string;
     priority: _Priority;
 }): {
     id: bigint;
@@ -462,8 +496,8 @@ function from_candid_record_n7(_uploadFile: (file: ExternalBlob) => Promise<Uint
     assignee: Principal;
     title: string;
     createdAt: bigint;
-    dueDate: string;
     description: string;
+    targetDate: string;
     priority: Priority;
 } {
     return {
@@ -472,8 +506,8 @@ function from_candid_record_n7(_uploadFile: (file: ExternalBlob) => Promise<Uint
         assignee: value.assignee,
         title: value.title,
         createdAt: value.createdAt,
-        dueDate: value.dueDate,
         description: value.description,
+        targetDate: value.targetDate,
         priority: from_candid_Priority_n10(_uploadFile, _downloadFile, value.priority)
     };
 }
@@ -560,6 +594,13 @@ function to_candid_variant_n4(_uploadFile: (file: ExternalBlob) => Promise<Uint8
     } : value == Priority.medium ? {
         medium: null
     } : value;
+}
+
+function from_candid_FrequencyType(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _FrequencyType): FrequencyType {
+    return "none" in value ? FrequencyType.none : "daily" in value ? FrequencyType.daily : "weekly" in value ? FrequencyType.weekly : "monthly" in value ? FrequencyType.monthly : FrequencyType.none;
+}
+function to_candid_FrequencyType(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: FrequencyType): _FrequencyType {
+    return value == FrequencyType.none ? { none: null } : value == FrequencyType.daily ? { daily: null } : value == FrequencyType.weekly ? { weekly: null } : value == FrequencyType.monthly ? { monthly: null } : { none: null };
 }
 export interface CreateActorOptions {
     agent?: Agent;

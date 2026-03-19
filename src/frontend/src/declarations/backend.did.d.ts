@@ -10,47 +10,62 @@ import type { ActorMethod } from '@icp-sdk/core/agent';
 import type { IDL } from '@icp-sdk/core/candid';
 import type { Principal } from '@icp-sdk/core/principal';
 
+export interface CompletionDate {
+  'taskId' : bigint,
+  'completionTimestamp' : bigint,
+}
 export type Priority = { 'low' : null } |
   { 'high' : null } |
   { 'medium' : null };
+export type FrequencyType = { 'none' : null } |
+  { 'daily' : null } |
+  { 'weekly' : null } |
+  { 'monthly' : null };
 export interface Task {
   'id' : bigint,
   'status' : TaskStatus,
   'assignee' : Principal,
   'title' : string,
   'createdAt' : bigint,
-  'dueDate' : string,
   'description' : string,
+  'targetDate' : string,
   'priority' : Priority,
+  'frequency' : FrequencyType,
+  'frequencyDays' : string,
 }
 export type TaskStatus = { 'done' : null } |
   { 'todo' : null } |
   { 'inProgress' : null };
 export interface UserProfile { 'name' : string, 'email' : string }
-export interface UserProfileEntry { 'principal' : Principal, 'profile' : UserProfile }
+export interface UserProfileEntry {
+  'principal' : Principal,
+  'profile' : UserProfile,
+}
 export type UserRole = { 'admin' : null } |
   { 'user' : null } |
   { 'guest' : null };
 export interface _SERVICE {
   '_initializeAccessControlWithSecret' : ActorMethod<[string], undefined>,
   'assignCallerUserRole' : ActorMethod<[Principal, UserRole], undefined>,
+  'assignUserRoleAsAdmin' : ActorMethod<[Principal, UserRole], undefined>,
   'bootstrapAdmin' : ActorMethod<[], boolean>,
-  'hasAnyAdmin' : ActorMethod<[], boolean>,
-  'countAllTasksByStatus' : ActorMethod<[], [bigint, bigint, bigint]>,
   'countTasksByStatus' : ActorMethod<[], [bigint, bigint, bigint]>,
   'createTask' : ActorMethod<
-    [string, string, Principal, string, Priority],
+    [string, string, Principal, string, Priority, FrequencyType, string],
     bigint
   >,
   'deleteTask' : ActorMethod<[bigint], undefined>,
+  'getAdminCount' : ActorMethod<[], bigint>,
   'getAllTasks' : ActorMethod<[], Array<Task>>,
   'getAllUserProfiles' : ActorMethod<[], Array<UserProfileEntry>>,
   'getCallerUserProfile' : ActorMethod<[], [] | [UserProfile]>,
   'getCallerUserRole' : ActorMethod<[], UserRole>,
+  'getCompletionDates' : ActorMethod<[], Array<CompletionDate>>,
   'getMyTasks' : ActorMethod<[], Array<Task>>,
   'getTask' : ActorMethod<[bigint], [] | [Task]>,
   'getTasksByEmployee' : ActorMethod<[Principal], Array<Task>>,
   'getUserProfile' : ActorMethod<[Principal], [] | [UserProfile]>,
+  'hasAnyAdmin' : ActorMethod<[], boolean>,
   'isCallerAdmin' : ActorMethod<[], boolean>,
   'saveCallerUserProfile' : ActorMethod<[UserProfile], undefined>,
   'updateTaskStatus' : ActorMethod<[bigint, TaskStatus], undefined>,
