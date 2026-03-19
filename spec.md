@@ -1,35 +1,34 @@
 # Company Task Manager
 
 ## Current State
-- Role-based access: Admin, Employee (User), Guest
-- Dashboard, My Tasks, All Tasks (admin), Create Task (admin), Profile, Admin Panel
-- Tasks have: id, title, description, assignee (Principal), dueDate, priority, status, createdAt
-- UserProfile stores name and email per Principal
-- No way to view tasks grouped by individual employee
-- No CSV export functionality
+- Dashboard with task stat cards (Todo, In Progress, Done)
+- Employee Panel (admin-only) showing per-employee tasks and CSV export (assigned + completed with date)
+- Completion timestamps stored in `taskCompletedAt` map; exposed via `getCompletionDates`
+- Employee Panel sidebar link is adminOnly=true; page also blocks non-admins
 
 ## Requested Changes (Diff)
 
 ### Add
-- **Employee Panel** (admin-only page): shows list of all registered employees with their names
-- Clicking an employee name shows:
-  - Their tasks **due today** (filtered by dueDate == today)
-  - **All tasks** assigned to them
-- **Export CSV: Assigned Tasks** button -- downloads all tasks currently assigned to that employee as a CSV file
-- **Export CSV: Completed Tasks** button -- downloads all tasks with status=done for that employee as a CSV file
-- Backend: `getAllUserProfiles()` query -- returns all (Principal, UserProfile) pairs (admin only)
-- Backend: `getTasksByEmployee(employee: Principal)` query -- returns all tasks for a given employee (admin only)
+- **Performance Dashboard page** (admin-only, `/performance`):
+  - Search input to find an employee by name (filter from all profiles)
+  - Once an employee is selected/typed, show a bar/donut chart with:
+    - On-time tasks: completed on or before due date (status=done AND completedAt <= dueDate end-of-day)
+    - Delayed tasks: completed after due date OR still not done and due date is past
+    - Pending tasks: not done and due date is in the future
+    - Display count + percentage labels
+  - Navigation link in sidebar (adminOnly)
 
 ### Modify
-- Navigation sidebar: add "Employee Panel" link (admin-only)
-- App.tsx: add route for `/employee-panel`
+- Confirm completed CSV already includes Completed Date column (already done in EmployeePanelPage)
+- Sidebar nav: add Performance link (adminOnly)
+- App.tsx: add performanceRoute
 
 ### Remove
-- Nothing removed
+- Nothing
 
 ## Implementation Plan
-1. Add `getAllUserProfiles` and `getTasksByEmployee` to Motoko backend
-2. Regenerate backend bindings
-3. Create `EmployeePanelPage.tsx` with employee list, task view, and CSV download buttons
-4. Add route `/employee-panel` in App.tsx
-5. Add nav item in AppLayout.tsx (admin-only)
+1. Create `src/frontend/src/pages/PerformancePage.tsx` with search + chart
+2. Add route `/performance` in `App.tsx`
+3. Add nav item `Performance` (adminOnly) in `AppLayout.tsx`
+4. Use existing hooks: `useAllUserProfiles`, `useTasksByEmployee`, `useCompletionDates`
+5. Performance logic: compare task dueDate vs completionDate (or today) to classify tasks

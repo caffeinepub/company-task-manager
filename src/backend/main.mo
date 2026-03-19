@@ -49,6 +49,8 @@ actor {
   let tasks = Map.empty<Nat, Task>();
   var nextTaskId = 0;
   let userProfiles = Map.empty<Principal, UserProfile>();
+  // Separate stable map for completion timestamps (avoids Task type migration)
+  let taskCompletedAt = Map.empty<Nat, Int>();
 
   // Bootstrap: allows the very first user to claim admin if no admin exists yet
   public shared ({ caller }) func bootstrapAdmin() : async Bool {
@@ -113,6 +115,18 @@ actor {
       if (task.assignee == employee) {
         result.add(task);
       };
+    };
+    result.toArray();
+  };
+
+  // Get completion timestamps for all tasks (admin only)
+  public query ({ caller }) func getCompletionDates() : async [(Nat, Int)] {
+    if (not (AccessControl.isAdmin(accessControlState, caller))) {
+      Runtime.trap("Unauthorized: Only admins can view completion dates");
+    };
+    let result = List.empty<(Nat, Int)>();
+    for ((id, ts) in taskCompletedAt.entries()) {
+      result.add((id, ts));
     };
     result.toArray();
   };
@@ -189,6 +203,16 @@ actor {
         if (task.assignee != caller and not AccessControl.isAdmin(accessControlState, caller)) {
           Runtime.trap("Unauthorized: Only assignee or admin can update status");
         };
+        // Record completion timestamp when marked done
+        switch (newStatus) {
+          case (#done) {
+            taskCompletedAt.add(taskId, Time.now());
+          };
+          case (_) {
+            // Remove completion timestamp if status is changed away from done
+            taskCompletedAt.remove(taskId);
+          };
+        };
         let updatedTask : Task = { task with status = newStatus };
         tasks.add(taskId, updatedTask);
       };
@@ -204,6 +228,7 @@ actor {
       case (null) { Runtime.trap("Task not found") };
       case (?_) {
         tasks.remove(taskId);
+        taskCompletedAt.remove(taskId);
       };
     };
   };

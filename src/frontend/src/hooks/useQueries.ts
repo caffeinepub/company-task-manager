@@ -118,6 +118,27 @@ export function useTasksByEmployee(employee: string | null) {
   });
 }
 
+export function useCompletionDates() {
+  const { actor, isFetching } = useActor();
+  return useQuery<Map<number, bigint>>({
+    queryKey: ["completionDates"],
+    queryFn: async () => {
+      if (!actor) return new Map<number, bigint>();
+      const actorAny = actor as any;
+      if (typeof actorAny.getCompletionDates !== "function") {
+        return new Map<number, bigint>();
+      }
+      const tuples: [bigint, bigint][] = await actorAny.getCompletionDates();
+      const map = new Map<number, bigint>();
+      for (const [id, ts] of tuples) {
+        map.set(Number(id), ts);
+      }
+      return map;
+    },
+    enabled: !!actor && !isFetching,
+  });
+}
+
 export function useUpdateTaskStatus() {
   const { actor } = useActor();
   const queryClient = useQueryClient();
@@ -134,6 +155,7 @@ export function useUpdateTaskStatus() {
       queryClient.invalidateQueries({ queryKey: ["allTasks"] });
       queryClient.invalidateQueries({ queryKey: ["dashboardStats"] });
       queryClient.invalidateQueries({ queryKey: ["tasksByEmployee"] });
+      queryClient.invalidateQueries({ queryKey: ["completionDates"] });
     },
   });
 }

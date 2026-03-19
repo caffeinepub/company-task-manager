@@ -15,6 +15,7 @@ import { Priority, TaskStatus } from "../backend.d";
 import type { Task, UserProfileEntry } from "../backend.d";
 import {
   useAllUserProfiles,
+  useCompletionDates,
   useIsAdmin,
   useTasksByEmployee,
 } from "../hooks/useQueries";
@@ -90,6 +91,29 @@ function tasksToRows(tasks: Task[], employeeName: string): string[][] {
   ]);
 }
 
+function completedTasksToRows(
+  tasks: Task[],
+  employeeName: string,
+  completionDates: Map<number, bigint>,
+): string[][] {
+  return tasks.map((t) => {
+    const ts = completionDates.get(Number(t.id));
+    const completedDateStr =
+      ts !== undefined ? new Date(Number(ts) / 1_000_000).toLocaleString() : "";
+    return [
+      String(t.id),
+      t.title,
+      t.description,
+      employeeName,
+      t.dueDate,
+      priorityLabel(t.priority),
+      statusLabel(t.status),
+      new Date(Number(t.createdAt) / 1_000_000).toLocaleString(),
+      completedDateStr,
+    ];
+  });
+}
+
 const CSV_HEADERS = [
   "Task ID",
   "Title",
@@ -101,6 +125,8 @@ const CSV_HEADERS = [
   "Created At",
 ];
 
+const COMPLETED_CSV_HEADERS = [...CSV_HEADERS, "Completed Date"];
+
 function EmployeeTaskView({
   entry,
   onBack,
@@ -110,6 +136,8 @@ function EmployeeTaskView({
 }) {
   const principalText = entry.principal.toText();
   const { data: tasks = [], isLoading } = useTasksByEmployee(principalText);
+  const { data: completionDates = new Map<number, bigint>() } =
+    useCompletionDates();
   const today = getTodayString();
   const todayTasks = tasks.filter((t) => t.dueDate === today);
   const employeeName = entry.profile.name || principalText;
@@ -126,8 +154,8 @@ function EmployeeTaskView({
     const done = tasks.filter((t) => t.status === TaskStatus.done);
     downloadCSV(
       `completed_tasks_${employeeName}.csv`,
-      tasksToRows(done, employeeName),
-      CSV_HEADERS,
+      completedTasksToRows(done, employeeName, completionDates),
+      COMPLETED_CSV_HEADERS,
     );
   }
 
@@ -336,7 +364,7 @@ export default function EmployeePanelPage() {
                   type="button"
                   onClick={() => setSelected(entry)}
                   className="w-full flex items-center justify-between px-5 py-4 hover:bg-muted/50 transition-colors text-left"
-                  data-ocid={`employee_panel.employee_${entry.principal.toText()}.button`}
+                  data-ocid="employee_panel.employee.button"
                 >
                   <div>
                     <p className="font-medium text-sm">

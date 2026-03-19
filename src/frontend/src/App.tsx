@@ -15,6 +15,7 @@ import DashboardPage from "./pages/DashboardPage";
 import EmployeePanelPage from "./pages/EmployeePanelPage";
 import LoginPage from "./pages/LoginPage";
 import MyTasksPage from "./pages/MyTasksPage";
+import PerformancePage from "./pages/PerformancePage";
 import ProfilePage from "./pages/ProfilePage";
 
 function RootLayout() {
@@ -94,6 +95,12 @@ const employeePanelRoute = createRoute({
   component: EmployeePanelPage,
 });
 
+const performanceRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/performance",
+  component: PerformancePage,
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   myTasksRoute,
@@ -102,6 +109,7 @@ const routeTree = rootRoute.addChildren([
   profileRoute,
   adminPanelRoute,
   employeePanelRoute,
+  performanceRoute,
 ]);
 
 const router = createRouter({ routeTree });

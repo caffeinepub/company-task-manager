@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Link, useLocation } from "@tanstack/react-router";
 import {
+  BarChart2,
   Building2,
   ClipboardList,
   LayoutDashboard,
@@ -48,6 +49,12 @@ const navItems: NavItem[] = [
     label: "Employee Panel",
     to: "/employee-panel",
     icon: <Users size={18} />,
+    adminOnly: true,
+  },
+  {
+    label: "Performance",
+    to: "/performance",
+    icon: <BarChart2 size={18} />,
     adminOnly: true,
   },
   { label: "Profile", to: "/profile", icon: <User size={18} /> },
