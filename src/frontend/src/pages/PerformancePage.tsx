@@ -1,6 +1,8 @@
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   BarChart2,
   Clock,
@@ -8,6 +10,7 @@ import {
   Search,
   TrendingDown,
   TrendingUp,
+  X,
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { TaskStatus } from "../backend.d";
@@ -34,11 +37,9 @@ function classifyTask(
       const completedDate = new Date(Number(ts / 1_000_000n));
       return completedDate <= due ? "onTime" : "delayed";
     }
-    // Done but no timestamp — treat as on time
     return "onTime";
   }
 
-  // Not done
   const dueDay = new Date(task.targetDate);
   dueDay.setHours(0, 0, 0, 0);
   if (dueDay < today) return "delayed";
@@ -108,7 +109,17 @@ function BarRow({ label, count, total, color, bgColor, icon }: BarRowProps) {
   );
 }
 
-function EmployeePerformance({ principalText }: { principalText: string }) {
+interface EmployeePerformanceProps {
+  principalText: string;
+  fromDate: string;
+  toDate: string;
+}
+
+function EmployeePerformance({
+  principalText,
+  fromDate,
+  toDate,
+}: EmployeePerformanceProps) {
   const { data: tasks = [], isLoading: loadingTasks } =
     useTasksByEmployee(principalText);
   const {
@@ -118,10 +129,27 @@ function EmployeePerformance({ principalText }: { principalText: string }) {
 
   const isLoading = loadingTasks || loadingDates;
 
+  const filteredTasks = useMemo(() => {
+    let result = tasks;
+    if (fromDate) {
+      const from = new Date(fromDate);
+      from.setHours(0, 0, 0, 0);
+      result = result.filter((t) => new Date(t.targetDate) >= from);
+    }
+    if (toDate) {
+      const to = new Date(toDate);
+      to.setHours(23, 59, 59, 999);
+      result = result.filter((t) => new Date(t.targetDate) <= to);
+    }
+    return result;
+  }, [tasks, fromDate, toDate]);
+
   const stats = useMemo(
-    () => computeStats(tasks, completionDates),
-    [tasks, completionDates],
+    () => computeStats(filteredTasks, completionDates),
+    [filteredTasks, completionDates],
   );
+
+  const isFiltered = fromDate || toDate;
 
   if (isLoading) {
     return (
@@ -137,7 +165,7 @@ function EmployeePerformance({ principalText }: { principalText: string }) {
     );
   }
 
-  if (tasks.length === 0) {
+  if (filteredTasks.length === 0) {
     return (
       <div
         className="flex flex-col items-center justify-center py-12 text-center"
@@ -145,7 +173,9 @@ function EmployeePerformance({ principalText }: { principalText: string }) {
       >
         <BarChart2 className="h-10 w-10 text-muted-foreground mb-3" />
         <p className="text-muted-foreground">
-          No tasks assigned to this employee yet.
+          {isFiltered
+            ? "No tasks found for the selected date range."
+            : "No tasks assigned to this employee yet."}
         </p>
       </div>
     );
@@ -153,6 +183,13 @@ function EmployeePerformance({ principalText }: { principalText: string }) {
 
   return (
     <div className="space-y-6">
+      {isFiltered && (
+        <p className="text-xs text-muted-foreground">
+          Showing {filteredTasks.length} of {tasks.length} task
+          {tasks.length !== 1 ? "s" : ""} in selected date range
+        </p>
+      )}
+
       {/* Stat cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <Card data-ocid="performance.total.card">
@@ -247,12 +284,21 @@ export default function PerformancePage() {
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<UserProfileEntry | null>(null);
   const [showDropdown, setShowDropdown] = useState(false);
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return [];
     return profiles.filter((p) => p.profile.name.toLowerCase().includes(q));
   }, [search, profiles]);
+
+  const hasDateFilter = fromDate || toDate;
+
+  const clearDates = () => {
+    setFromDate("");
+    setToDate("");
+  };
 
   if (loadingAdmin) {
     return (
@@ -289,13 +335,15 @@ export default function PerformancePage() {
           Performance Dashboard
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Search for an employee to view their task performance metrics.
+          Search by employee name and filter by date range to view performance
+          metrics.
         </p>
       </div>
 
-      {/* Search */}
+      {/* Search + Date Range */}
       <Card>
-        <CardContent className="pt-5">
+        <CardContent className="pt-5 space-y-4">
+          {/* Employee Search */}
           <div className="relative">
             <Search
               size={16}
@@ -351,7 +399,7 @@ export default function PerformancePage() {
           </div>
 
           {selected && (
-            <div className="mt-3 flex items-center gap-2">
+            <div className="flex items-center gap-2">
               <span className="text-sm text-muted-foreground">Viewing:</span>
               <Badge variant="secondary">{selected.profile.name}</Badge>
               <span className="text-xs text-muted-foreground">
@@ -359,12 +407,61 @@ export default function PerformancePage() {
               </span>
             </div>
           )}
+
+          {/* Date Range */}
+          <div className="border-t pt-4">
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-3">
+              Filter by Target Date Range
+            </p>
+            <div className="flex flex-col sm:flex-row gap-3 items-end">
+              <div className="flex-1 space-y-1">
+                <Label htmlFor="perf-from" className="text-xs">
+                  From Date
+                </Label>
+                <Input
+                  id="perf-from"
+                  type="date"
+                  value={fromDate}
+                  onChange={(e) => setFromDate(e.target.value)}
+                  data-ocid="performance.from_date"
+                />
+              </div>
+              <div className="flex-1 space-y-1">
+                <Label htmlFor="perf-to" className="text-xs">
+                  To Date
+                </Label>
+                <Input
+                  id="perf-to"
+                  type="date"
+                  value={toDate}
+                  onChange={(e) => setToDate(e.target.value)}
+                  data-ocid="performance.to_date"
+                />
+              </div>
+              {hasDateFilter && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={clearDates}
+                  className="flex items-center gap-1 shrink-0"
+                  data-ocid="performance.clear_dates"
+                >
+                  <X size={14} />
+                  Clear
+                </Button>
+              )}
+            </div>
+          </div>
         </CardContent>
       </Card>
 
       {/* Performance View */}
       {selected ? (
-        <EmployeePerformance principalText={selected.principal.toString()} />
+        <EmployeePerformance
+          principalText={selected.principal.toString()}
+          fromDate={fromDate}
+          toDate={toDate}
+        />
       ) : (
         <div
           className="flex flex-col items-center justify-center py-16 text-center"
