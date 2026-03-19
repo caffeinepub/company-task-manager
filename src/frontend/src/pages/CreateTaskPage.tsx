@@ -34,7 +34,7 @@ const WEEKDAYS = [
 ];
 
 export default function CreateTaskPage() {
-  const { data: isAdmin } = useIsAdmin();
+  const { data: isAdmin, isLoading: isAdminLoading } = useIsAdmin();
   const createTask = useCreateTask();
 
   const [title, setTitle] = useState("");
@@ -106,6 +106,14 @@ export default function CreateTaskPage() {
           toast.error("Failed to create task");
         },
       },
+    );
+  }
+
+  if (isAdminLoading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 size={24} className="animate-spin text-primary" />
+      </div>
     );
   }
 

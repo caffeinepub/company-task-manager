@@ -30,7 +30,14 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { format, isWithinInterval, parseISO } from "date-fns";
-import { CalendarIcon, ClipboardList, Search, Trash2, X } from "lucide-react";
+import {
+  CalendarIcon,
+  ClipboardList,
+  Loader2,
+  Search,
+  Trash2,
+  X,
+} from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Priority, TaskStatus } from "../backend.d";
@@ -119,7 +126,7 @@ function DeleteButton({ task, index }: { task: Task; index: number }) {
 }
 
 export default function AllTasksPage() {
-  const { data: isAdmin } = useIsAdmin();
+  const { data: isAdmin, isLoading: isAdminLoading } = useIsAdmin();
   const { data: tasks, isLoading } = useAllTasks();
 
   const [nameFilter, setNameFilter] = useState("");
@@ -127,6 +134,14 @@ export default function AllTasksPage() {
   const [endDate, setEndDate] = useState<Date | undefined>(undefined);
   const [startOpen, setStartOpen] = useState(false);
   const [endOpen, setEndOpen] = useState(false);
+
+  if (isAdminLoading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 size={24} className="animate-spin text-primary" />
+      </div>
+    );
+  }
 
   if (!isAdmin) {
     return (
@@ -143,12 +158,10 @@ export default function AllTasksPage() {
   }
 
   const filteredTasks = (tasks ?? []).filter((task) => {
-    // Name filter
     if (nameFilter.trim()) {
       const q = nameFilter.trim().toLowerCase();
       if (!task.title.toLowerCase().includes(q)) return false;
     }
-    // Date range filter based on targetDate
     if (startDate || endDate) {
       if (!task.targetDate) return false;
       try {
@@ -192,7 +205,6 @@ export default function AllTasksPage() {
       <Card className="shadow-card">
         <CardContent className="p-4">
           <div className="flex flex-col sm:flex-row gap-3 items-end">
-            {/* Name search */}
             <div className="flex-1 space-y-1">
               <Label className="text-xs text-muted-foreground">
                 Search by Name
@@ -211,7 +223,6 @@ export default function AllTasksPage() {
               </div>
             </div>
 
-            {/* Start Date */}
             <div className="space-y-1">
               <Label className="text-xs text-muted-foreground">From Date</Label>
               <Popover open={startOpen} onOpenChange={setStartOpen}>
@@ -245,7 +256,6 @@ export default function AllTasksPage() {
               </Popover>
             </div>
 
-            {/* End Date */}
             <div className="space-y-1">
               <Label className="text-xs text-muted-foreground">To Date</Label>
               <Popover open={endOpen} onOpenChange={setEndOpen}>
@@ -280,7 +290,6 @@ export default function AllTasksPage() {
               </Popover>
             </div>
 
-            {/* Clear */}
             {hasFilters && (
               <Button
                 variant="ghost"
@@ -350,7 +359,7 @@ export default function AllTasksPage() {
                     </TableCell>
                     <TableCell className="hidden md:table-cell">
                       <span className="text-xs font-mono text-muted-foreground">
-                        {task.assignee.toString().slice(0, 12)}…
+                        {task.assignee.toString().slice(0, 12)}&hellip;
                       </span>
                     </TableCell>
                     <TableCell>

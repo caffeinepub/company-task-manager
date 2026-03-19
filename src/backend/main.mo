@@ -9,7 +9,7 @@ import MixinAuthorization "authorization/MixinAuthorization";
 import AccessControl "authorization/access-control";
 
 actor {
-  let accessControlState = AccessControl.initState();
+  stable let accessControlState = AccessControl.initState();
   include MixinAuthorization(accessControlState);
 
   public type Priority = {
@@ -72,12 +72,12 @@ actor {
   };
 
   // Legacy stable map absorbs old task data on upgrade (compatible with old Task type)
-  let tasks = Map.empty<Nat, TaskLegacy>();
+  stable let tasks = Map.empty<Nat, TaskLegacy>();
   // New stable map stores tasks with frequency fields
-  let tasksV2 = Map.empty<Nat, Task>();
-  var nextTaskId = 0;
-  let userProfiles = Map.empty<Principal, UserProfile>();
-  let taskCompletedAt = Map.empty<Nat, Int>();
+  stable let tasksV2 = Map.empty<Nat, Task>();
+  stable var nextTaskId = 0;
+  stable let userProfiles = Map.empty<Principal, UserProfile>();
+  stable let taskCompletedAt = Map.empty<Nat, Int>();
 
   // On upgrade: migrate any legacy tasks into tasksV2 with default frequency values
   system func postupgrade() {
@@ -151,9 +151,6 @@ actor {
   };
 
   public query ({ caller }) func getCallerUserProfile() : async ?UserProfile {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can access profiles");
-    };
     userProfiles.get(caller);
   };
 
@@ -165,8 +162,8 @@ actor {
   };
 
   public shared ({ caller }) func saveCallerUserProfile(profile : UserProfile) : async () {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can save profiles");
+    if (caller.isAnonymous()) {
+      Runtime.trap("Unauthorized: Anonymous principals cannot save profiles");
     };
     userProfiles.add(caller, profile);
   };
@@ -226,25 +223,20 @@ actor {
   };
 
   public query ({ caller }) func getTask(taskId : Nat) : async ?Task {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can view tasks");
-    };
     switch (tasksV2.get(taskId)) {
       case (null) { null };
       case (?task) {
         if (task.assignee == caller or AccessControl.isAdmin(accessControlState, caller)) {
           ?task;
         } else {
-          Runtime.trap("Unauthorized: Can only view tasks assigned to you");
+          null;
         };
       };
     };
   };
 
   public query ({ caller }) func getMyTasks() : async [Task] {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can view tasks");
-    };
+    if (caller.isAnonymous()) { return [] };
     tasksV2.values().filter(func(task) { task.assignee == caller }).toArray();
   };
 
@@ -256,8 +248,8 @@ actor {
   };
 
   public shared ({ caller }) func updateTaskStatus(taskId : Nat, newStatus : TaskStatus) : async () {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can update task status");
+    if (caller.isAnonymous()) {
+      Runtime.trap("Unauthorized: Must be logged in");
     };
     switch (tasksV2.get(taskId)) {
       case (null) { Runtime.trap("Task not found") };
@@ -293,15 +285,13 @@ actor {
   };
 
   public query ({ caller }) func countTasksByStatus() : async (Nat, Nat, Nat) {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can view task statistics");
-    };
+    if (caller.isAnonymous()) { return (0, 0, 0) };
     var todoCount = 0;
     var inProgressCount = 0;
     var doneCount = 0;
-    let isAdmin = AccessControl.isAdmin(accessControlState, caller);
+    let isAdminCaller = AccessControl.isAdmin(accessControlState, caller);
     for (task in tasksV2.values()) {
-      if (isAdmin or task.assignee == caller) {
+      if (isAdminCaller or task.assignee == caller) {
         switch (task.status) {
           case (#todo) { todoCount += 1 };
           case (#inProgress) { inProgressCount += 1 };
