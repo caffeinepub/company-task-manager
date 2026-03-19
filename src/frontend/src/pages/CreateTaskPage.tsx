@@ -24,14 +24,43 @@ import { FrequencyType, Priority } from "../backend.d";
 import { useCreateTask, useIsAdmin } from "../hooks/useQueries";
 
 const WEEKDAYS = [
-  { label: "Monday", value: "Mon" },
-  { label: "Tuesday", value: "Tue" },
-  { label: "Wednesday", value: "Wed" },
-  { label: "Thursday", value: "Thu" },
-  { label: "Friday", value: "Fri" },
-  { label: "Saturday", value: "Sat" },
-  { label: "Sunday", value: "Sun" },
+  { label: "Monday", value: "Mon", jsDay: 1 },
+  { label: "Tuesday", value: "Tue", jsDay: 2 },
+  { label: "Wednesday", value: "Wed", jsDay: 3 },
+  { label: "Thursday", value: "Thu", jsDay: 4 },
+  { label: "Friday", value: "Fri", jsDay: 5 },
+  { label: "Saturday", value: "Sat", jsDay: 6 },
+  { label: "Sunday", value: "Sun", jsDay: 0 },
 ];
+
+/** Returns YYYY-MM-DD for today */
+function todayStr(): string {
+  const d = new Date();
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * Returns YYYY-MM-DD for the date of `jsDay` (0=Sun … 6=Sat)
+ * in the current week (Mon-based week).
+ * If the day has already passed this week, returns the same week's day
+ * (not next week). Always stays within the current Mon–Sun window.
+ */
+function dateForWeekday(jsDay: number): string {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const todayDay = today.getDay(); // 0=Sun
+  const diff = jsDay - todayDay;
+  const target = new Date(today);
+  target.setDate(today.getDate() + diff);
+  return target.toISOString().slice(0, 10);
+}
+
+/** Returns YYYY-MM-DD for day `d` of the current month */
+function dateForMonthDay(d: number): string {
+  const now = new Date();
+  const target = new Date(now.getFullYear(), now.getMonth(), d);
+  return target.toISOString().slice(0, 10);
+}
 
 export default function CreateTaskPage() {
   const { data: isAdmin, isLoading: isAdminLoading } = useIsAdmin();
@@ -47,10 +76,52 @@ export default function CreateTaskPage() {
   const [monthDay, setMonthDay] = useState("1");
   const [error, setError] = useState("");
 
-  function toggleWeekday(day: string) {
-    setSelectedWeekdays((prev) =>
-      prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day],
-    );
+  /** When frequency changes, auto-update the target date */
+  function handleFrequencyChange(v: FrequencyType) {
+    setFrequency(v);
+    setSelectedWeekdays([]);
+
+    if (v === FrequencyType.daily) {
+      setTargetDate(todayStr());
+    } else if (v === FrequencyType.monthly) {
+      setTargetDate(dateForMonthDay(Number(monthDay)));
+    } else {
+      // none or weekly (weekly date set when day is first picked)
+      setTargetDate("");
+    }
+  }
+
+  /** When a weekday checkbox is toggled for weekly tasks */
+  function toggleWeekday(dayValue: string) {
+    setSelectedWeekdays((prev) => {
+      const next = prev.includes(dayValue)
+        ? prev.filter((d) => d !== dayValue)
+        : [...prev, dayValue];
+
+      // Auto-set target date to the earliest selected day in the current week
+      if (next.length > 0) {
+        // Sort by jsDay so we pick the earliest in the week
+        const sorted = [...next].sort((a, b) => {
+          const da = WEEKDAYS.find((w) => w.value === a)!.jsDay;
+          const db = WEEKDAYS.find((w) => w.value === b)!.jsDay;
+          return da - db;
+        });
+        const firstDay = WEEKDAYS.find((w) => w.value === sorted[0])!;
+        setTargetDate(dateForWeekday(firstDay.jsDay));
+      } else {
+        setTargetDate("");
+      }
+
+      return next;
+    });
+  }
+
+  /** When monthly day picker changes */
+  function handleMonthDayChange(v: string) {
+    setMonthDay(v);
+    if (frequency === FrequencyType.monthly) {
+      setTargetDate(dateForMonthDay(Number(v)));
+    }
   }
 
   function buildFrequencyDays(): string {
@@ -194,47 +265,12 @@ export default function CreateTaskPage() {
               </p>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <Label htmlFor="targetDate">
-                  Target Date <span className="text-destructive">*</span>
-                </Label>
-                <Input
-                  id="targetDate"
-                  type="date"
-                  value={targetDate}
-                  onChange={(e) => setTargetDate(e.target.value)}
-                  data-ocid="create_task.target_date.input"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label>Priority</Label>
-                <Select
-                  value={priority}
-                  onValueChange={(v) => setPriority(v as Priority)}
-                >
-                  <SelectTrigger data-ocid="create_task.priority.select">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={Priority.low}>Low</SelectItem>
-                    <SelectItem value={Priority.medium}>Medium</SelectItem>
-                    <SelectItem value={Priority.high}>High</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            {/* Frequency */}
+            {/* Frequency -- placed BEFORE target date so date auto-fills */}
             <div className="space-y-1.5">
               <Label>Task Frequency</Label>
               <Select
                 value={frequency}
-                onValueChange={(v) => {
-                  setFrequency(v as FrequencyType);
-                  setSelectedWeekdays([]);
-                }}
+                onValueChange={(v) => handleFrequencyChange(v as FrequencyType)}
               >
                 <SelectTrigger data-ocid="create_task.frequency.select">
                   <SelectValue />
@@ -259,6 +295,10 @@ export default function CreateTaskPage() {
                 <Label>
                   Select Days <span className="text-destructive">*</span>
                 </Label>
+                <p className="text-xs text-muted-foreground">
+                  Target date will auto-update to the selected day in the
+                  current week.
+                </p>
                 <div className="grid grid-cols-2 gap-2">
                   {WEEKDAYS.map((day) => (
                     <div
@@ -288,7 +328,7 @@ export default function CreateTaskPage() {
                 <Label htmlFor="monthDay">
                   Day of Month <span className="text-destructive">*</span>
                 </Label>
-                <Select value={monthDay} onValueChange={setMonthDay}>
+                <Select value={monthDay} onValueChange={handleMonthDayChange}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
@@ -307,6 +347,49 @@ export default function CreateTaskPage() {
                 </p>
               </div>
             )}
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="targetDate">
+                  Target Date <span className="text-destructive">*</span>
+                </Label>
+                <Input
+                  id="targetDate"
+                  type="date"
+                  value={targetDate}
+                  onChange={(e) => setTargetDate(e.target.value)}
+                  data-ocid="create_task.target_date.input"
+                />
+                {frequency === FrequencyType.daily && (
+                  <p className="text-xs text-muted-foreground">
+                    Auto-set to today.
+                  </p>
+                )}
+                {frequency === FrequencyType.weekly &&
+                  selectedWeekdays.length > 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      Auto-set to selected day this week.
+                    </p>
+                  )}
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>Priority</Label>
+                <Select
+                  value={priority}
+                  onValueChange={(v) => setPriority(v as Priority)}
+                >
+                  <SelectTrigger data-ocid="create_task.priority.select">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={Priority.low}>Low</SelectItem>
+                    <SelectItem value={Priority.medium}>Medium</SelectItem>
+                    <SelectItem value={Priority.high}>High</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
 
             {error && (
               <p
