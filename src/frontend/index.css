@@ -1,0 +1,145 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─── Fonts ─────────────────────────────────────── */
+@font-face {
+  font-family: "Bricolage Grotesque";
+  src: url("/assets/fonts/BricolageGrotesque[opsz,wdth,wght].woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Figtree";
+  src: url("/assets/fonts/Figtree[wght].woff2") format("woff2");
+  font-weight: 300 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* ─── HR Nursery School – Warm Teal + Coral Design Tokens ─── */
+@layer base {
+  :root {
+    --radius: 1rem;
+
+    /* Warm off-white background */
+    --background: 0.98 0.008 85;
+    --foreground: 0.22 0.04 240;
+
+    /* Cards: creamy white */
+    --card: 0.995 0.005 80;
+    --card-foreground: 0.22 0.04 240;
+
+    /* Popover */
+    --popover: 0.995 0.005 80;
+    --popover-foreground: 0.22 0.04 240;
+
+    /* Primary: warm teal */
+    --primary: 0.52 0.13 195;
+    --primary-foreground: 0.99 0 0;
+
+    /* Secondary: soft coral/peach */
+    --secondary: 0.94 0.04 60;
+    --secondary-foreground: 0.25 0.06 25;
+
+    /* Muted: light sand */
+    --muted: 0.94 0.015 80;
+    --muted-foreground: 0.50 0.03 230;
+
+    /* Accent: warm coral */
+    --accent: 0.72 0.17 35;
+    --accent-foreground: 0.99 0 0;
+
+    /* Destructive */
+    --destructive: 0.577 0.245 27.325;
+    --destructive-foreground: 0.985 0 0;
+
+    /* Borders */
+    --border: 0.88 0.02 200;
+    --input: 0.90 0.015 200;
+    --ring: 0.52 0.13 195;
+
+    /* Charts */
+    --chart-1: 0.646 0.222 41.116;
+    --chart-2: 0.6 0.118 184.704;
+    --chart-3: 0.52 0.13 195;
+    --chart-4: 0.828 0.189 84.429;
+    --chart-5: 0.72 0.17 35;
+
+    /* Sidebar */
+    --sidebar: 0.97 0.01 195;
+    --sidebar-foreground: 0.22 0.04 240;
+    --sidebar-primary: 0.52 0.13 195;
+    --sidebar-primary-foreground: 0.99 0 0;
+    --sidebar-accent: 0.92 0.03 195;
+    --sidebar-accent-foreground: 0.22 0.04 240;
+    --sidebar-border: 0.88 0.02 200;
+    --sidebar-ring: 0.52 0.13 195;
+
+    /* Custom nursery tokens */
+    --teal: 0.52 0.13 195;
+    --teal-light: 0.88 0.06 195;
+    --teal-dark: 0.38 0.12 195;
+    --coral: 0.72 0.17 35;
+    --coral-light: 0.93 0.06 35;
+    --sunshine: 0.85 0.18 85;
+    --sunshine-light: 0.95 0.08 85;
+    --lavender: 0.80 0.10 280;
+    --lavender-light: 0.93 0.04 280;
+    --mint: 0.82 0.10 165;
+    --mint-light: 0.94 0.04 165;
+  }
+
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground font-body;
+    -webkit-font-smoothing: antialiased;
+  }
+}
+
+/* ─── Custom Utilities ─────────────────────────── */
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+  
+  .wave-bg {
+    background: oklch(var(--background));
+    background-image: 
+      radial-gradient(ellipse at 20% 50%, oklch(var(--teal-light) / 0.35) 0%, transparent 60%),
+      radial-gradient(ellipse at 80% 20%, oklch(var(--coral-light) / 0.3) 0%, transparent 50%),
+      radial-gradient(ellipse at 60% 90%, oklch(var(--sunshine-light) / 0.25) 0%, transparent 50%);
+  }
+  
+  .hero-gradient {
+    background: linear-gradient(
+      135deg,
+      oklch(var(--teal) / 0.92) 0%,
+      oklch(0.48 0.12 200) 50%,
+      oklch(0.45 0.11 210) 100%
+    );
+  }
+
+  .card-hover {
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+  }
+  .card-hover:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 12px 32px oklch(var(--teal) / 0.18);
+  }
+
+  .section-wave-top::before {
+    content: '';
+    display: block;
+    height: 60px;
+    background: inherit;
+    clip-path: ellipse(55% 100% at 50% 0%);
+    margin-top: -59px;
+    position: relative;
+    z-index: 1;
+  }
+}

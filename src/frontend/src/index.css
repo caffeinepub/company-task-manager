@@ -1,0 +1,101 @@
+@import url("https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Background / Foreground */
+    --background: 0.98 0.003 240;
+    --foreground: 0.18 0.02 240;
+
+    /* Card */
+    --card: 1 0 0;
+    --card-foreground: 0.18 0.02 240;
+
+    /* Popover */
+    --popover: 1 0 0;
+    --popover-foreground: 0.18 0.02 240;
+
+    /* Primary - corporate blue */
+    --primary: 0.52 0.18 240;
+    --primary-foreground: 1 0 0;
+
+    /* Secondary */
+    --secondary: 0.94 0.01 240;
+    --secondary-foreground: 0.28 0.04 240;
+
+    /* Muted */
+    --muted: 0.94 0.01 240;
+    --muted-foreground: 0.55 0.02 240;
+
+    /* Accent */
+    --accent: 0.94 0.03 240;
+    --accent-foreground: 0.28 0.04 240;
+
+    /* Destructive */
+    --destructive: 0.55 0.22 25;
+    --destructive-foreground: 1 0 0;
+
+    /* Border / Input / Ring */
+    --border: 0.88 0.01 240;
+    --input: 0.88 0.01 240;
+    --ring: 0.52 0.18 240;
+
+    /* Radius */
+    --radius: 0.5rem;
+
+    /* Charts */
+    --chart-1: 0.52 0.18 240;
+    --chart-2: 0.62 0.16 160;
+    --chart-3: 0.72 0.18 80;
+    --chart-4: 0.62 0.2 30;
+    --chart-5: 0.62 0.18 280;
+
+    /* Sidebar - dark navy */
+    --sidebar: 0.24 0.04 243;
+    --sidebar-foreground: 0.88 0.02 240;
+    --sidebar-primary: 0.52 0.18 240;
+    --sidebar-primary-foreground: 1 0 0;
+    --sidebar-accent: 0.3 0.05 243;
+    --sidebar-accent-foreground: 0.92 0.02 240;
+    --sidebar-border: 0.32 0.04 243;
+    --sidebar-ring: 0.52 0.18 240;
+
+    /* Status colors */
+    --status-todo: 0.65 0.01 240;
+    --status-in-progress: 0.52 0.18 240;
+    --status-done: 0.6 0.16 152;
+
+    /* Priority colors */
+    --priority-high: 0.55 0.22 25;
+    --priority-medium: 0.72 0.18 70;
+    --priority-low: 0.6 0.16 152;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground font-body antialiased;
+  }
+}
+
+/* Sidebar transition */
+.sidebar-nav-link {
+  @apply flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150;
+  color: oklch(var(--sidebar-foreground));
+}
+
+.sidebar-nav-link:hover {
+  background: oklch(var(--sidebar-accent));
+  color: oklch(var(--sidebar-accent-foreground));
+}
+
+.sidebar-nav-link.active {
+  background: oklch(var(--primary) / 0.2);
+  color: oklch(0.75 0.12 240);
+}
