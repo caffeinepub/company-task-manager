@@ -40,9 +40,23 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
-import { Priority, TaskStatus } from "../backend.d";
+import { FrequencyType, Priority, TaskStatus } from "../backend.d";
 import type { Task } from "../backend.d";
 import { useAllTasks, useDeleteTask, useIsAdmin } from "../hooks/useQueries";
+
+function frequencyLabel(task: Task): string {
+  const freq = task.frequency as FrequencyType;
+  switch (freq) {
+    case FrequencyType.daily:
+      return "Daily";
+    case FrequencyType.weekly:
+      return `Weekly: ${task.frequencyDays}`;
+    case FrequencyType.monthly:
+      return `Monthly: day ${task.frequencyDays}`;
+    default:
+      return "One-time";
+  }
+}
 
 function PriorityBadge({ priority }: { priority: Priority }) {
   const map: Record<Priority, { label: string; className: string }> = {
@@ -340,6 +354,12 @@ export default function AllTasksPage() {
                   <TableHead className="hidden sm:table-cell">
                     Target Date
                   </TableHead>
+                  <TableHead className="hidden lg:table-cell">
+                    Frequency
+                  </TableHead>
+                  <TableHead className="hidden lg:table-cell">
+                    Department
+                  </TableHead>
                   <TableHead className="w-12" />
                 </TableRow>
               </TableHeader>
@@ -370,6 +390,12 @@ export default function AllTasksPage() {
                     </TableCell>
                     <TableCell className="hidden sm:table-cell text-sm">
                       {task.targetDate}
+                    </TableCell>
+                    <TableCell className="hidden lg:table-cell text-xs text-muted-foreground">
+                      {frequencyLabel(task)}
+                    </TableCell>
+                    <TableCell className="hidden lg:table-cell text-xs text-muted-foreground">
+                      {task.department || "-"}
                     </TableCell>
                     <TableCell>
                       <DeleteButton task={task} index={i} />

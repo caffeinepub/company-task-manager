@@ -33,29 +33,21 @@ const WEEKDAYS = [
   { label: "Sunday", value: "Sun", jsDay: 0 },
 ];
 
-/** Returns YYYY-MM-DD for today */
 function todayStr(): string {
   const d = new Date();
   return d.toISOString().slice(0, 10);
 }
 
-/**
- * Returns YYYY-MM-DD for the date of `jsDay` (0=Sun … 6=Sat)
- * in the current week (Mon-based week).
- * If the day has already passed this week, returns the same week's day
- * (not next week). Always stays within the current Mon–Sun window.
- */
 function dateForWeekday(jsDay: number): string {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const todayDay = today.getDay(); // 0=Sun
+  const todayDay = today.getDay();
   const diff = jsDay - todayDay;
   const target = new Date(today);
   target.setDate(today.getDate() + diff);
   return target.toISOString().slice(0, 10);
 }
 
-/** Returns YYYY-MM-DD for day `d` of the current month */
 function dateForMonthDay(d: number): string {
   const now = new Date();
   const target = new Date(now.getFullYear(), now.getMonth(), d);
@@ -68,6 +60,7 @@ export default function CreateTaskPage() {
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  const [department, setDepartment] = useState("");
   const [assignee, setAssignee] = useState("");
   const [targetDate, setTargetDate] = useState("");
   const [priority, setPriority] = useState<Priority>(Priority.medium);
@@ -76,7 +69,6 @@ export default function CreateTaskPage() {
   const [monthDay, setMonthDay] = useState("1");
   const [error, setError] = useState("");
 
-  /** When frequency changes, auto-update the target date */
   function handleFrequencyChange(v: FrequencyType) {
     setFrequency(v);
     setSelectedWeekdays([]);
@@ -86,21 +78,17 @@ export default function CreateTaskPage() {
     } else if (v === FrequencyType.monthly) {
       setTargetDate(dateForMonthDay(Number(monthDay)));
     } else {
-      // none or weekly (weekly date set when day is first picked)
       setTargetDate("");
     }
   }
 
-  /** When a weekday checkbox is toggled for weekly tasks */
   function toggleWeekday(dayValue: string) {
     setSelectedWeekdays((prev) => {
       const next = prev.includes(dayValue)
         ? prev.filter((d) => d !== dayValue)
         : [...prev, dayValue];
 
-      // Auto-set target date to the earliest selected day in the current week
       if (next.length > 0) {
-        // Sort by jsDay so we pick the earliest in the week
         const sorted = [...next].sort((a, b) => {
           const da = WEEKDAYS.find((w) => w.value === a)!.jsDay;
           const db = WEEKDAYS.find((w) => w.value === b)!.jsDay;
@@ -116,7 +104,6 @@ export default function CreateTaskPage() {
     });
   }
 
-  /** When monthly day picker changes */
   function handleMonthDayChange(v: string) {
     setMonthDay(v);
     if (frequency === FrequencyType.monthly) {
@@ -157,12 +144,14 @@ export default function CreateTaskPage() {
         priority,
         frequency,
         frequencyDays: buildFrequencyDays(),
+        department: department.trim(),
       },
       {
         onSuccess: () => {
           toast.success("Task created successfully!");
           setTitle("");
           setDescription("");
+          setDepartment("");
           setAssignee("");
           setTargetDate("");
           setPriority(Priority.medium);
@@ -249,6 +238,17 @@ export default function CreateTaskPage() {
             </div>
 
             <div className="space-y-1.5">
+              <Label htmlFor="department">Department</Label>
+              <Input
+                id="department"
+                value={department}
+                onChange={(e) => setDepartment(e.target.value)}
+                placeholder="e.g. Finance, HR, Engineering"
+                data-ocid="create_task.department.input"
+              />
+            </div>
+
+            <div className="space-y-1.5">
               <Label htmlFor="assignee">
                 Assignee Principal <span className="text-destructive">*</span>
               </Label>
@@ -265,7 +265,7 @@ export default function CreateTaskPage() {
               </p>
             </div>
 
-            {/* Frequency -- placed BEFORE target date so date auto-fills */}
+            {/* Frequency */}
             <div className="space-y-1.5">
               <Label>Task Frequency</Label>
               <Select

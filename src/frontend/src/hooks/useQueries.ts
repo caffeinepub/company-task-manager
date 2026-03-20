@@ -12,6 +12,12 @@ import { useActor } from "./useActor";
 export type { Task, UserProfile, UserProfileEntry };
 export { FrequencyType, Priority, TaskStatus, UserRole };
 
+export interface DashboardStats {
+  todo: bigint;
+  inProgress: bigint;
+  done: bigint;
+}
+
 export function useIsAdmin() {
   const { actor, isFetching } = useActor();
   return useQuery<boolean>({
@@ -62,11 +68,24 @@ export function useCallerProfile() {
 
 export function useDashboardStats(isAdmin: boolean) {
   const { actor, isFetching } = useActor();
-  return useQuery<[bigint, bigint, bigint]>({
+  return useQuery<DashboardStats>({
     queryKey: ["dashboardStats", isAdmin],
     queryFn: async () => {
-      if (!actor) return [0n, 0n, 0n] as [bigint, bigint, bigint];
-      return actor.countTasksByStatus();
+      if (!actor) return { todo: 0n, inProgress: 0n, done: 0n };
+      const result = await (actor as any).countTasksByStatus();
+      // Handle both tuple [bigint,bigint,bigint] and object {todo,inProgress,done}
+      if (Array.isArray(result)) {
+        return {
+          todo: result[0] as bigint,
+          inProgress: result[1] as bigint,
+          done: result[2] as bigint,
+        };
+      }
+      return {
+        todo: (result.todo ?? 0n) as bigint,
+        inProgress: (result.inProgress ?? 0n) as bigint,
+        done: (result.done ?? 0n) as bigint,
+      };
     },
     enabled: !!actor && !isFetching,
   });
@@ -184,6 +203,7 @@ export function useCreateTask() {
       priority,
       frequency,
       frequencyDays,
+      department,
     }: {
       title: string;
       description: string;
@@ -192,6 +212,7 @@ export function useCreateTask() {
       priority: Priority;
       frequency: FrequencyType;
       frequencyDays: string;
+      department: string;
     }) => {
       if (!actor) throw new Error("No actor");
       const principal = Principal.fromText(assignee);
@@ -203,6 +224,7 @@ export function useCreateTask() {
         priority,
         frequency,
         frequencyDays,
+        department,
       );
     },
     onSuccess: () => {

@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/table";
 import { Download, Loader2, Users } from "lucide-react";
 import { useState } from "react";
-import { Priority, TaskStatus } from "../backend.d";
+import { FrequencyType, Priority, TaskStatus } from "../backend.d";
 import type { Task, UserProfileEntry } from "../backend.d";
 import {
   useAllTasks,
@@ -62,6 +62,20 @@ function statusVariant(s: TaskStatus): "default" | "secondary" | "outline" {
   }
 }
 
+function frequencyLabel(task: Task): string {
+  const freq = task.frequency as FrequencyType;
+  switch (freq) {
+    case FrequencyType.daily:
+      return "Daily";
+    case FrequencyType.weekly:
+      return `Weekly: ${task.frequencyDays}`;
+    case FrequencyType.monthly:
+      return `Monthly: day ${task.frequencyDays}`;
+    default:
+      return "One-time";
+  }
+}
+
 function downloadCSV(filename: string, rows: string[][], headers: string[]) {
   const escapeCSV = (v: string) => `"${v.replace(/"/g, '""')}"`;
   const lines = [
@@ -89,6 +103,8 @@ function tasksToRows(tasks: Task[], employeeName: string): string[][] {
     priorityLabel(t.priority),
     statusLabel(t.status),
     new Date(Number(t.createdAt) / 1_000_000).toLocaleString(),
+    frequencyLabel(t),
+    t.department || "-",
   ]);
 }
 
@@ -112,6 +128,8 @@ function completedTasksToRows(
       priorityLabel(t.priority),
       statusLabel(t.status),
       new Date(Number(t.createdAt) / 1_000_000).toLocaleString(),
+      frequencyLabel(t),
+      t.department || "-",
       completedDateStr,
     ];
   });
@@ -126,6 +144,8 @@ const CSV_HEADERS = [
   "Priority",
   "Status",
   "Created At",
+  "Frequency",
+  "Department",
 ];
 
 const COMPLETED_CSV_HEADERS = [...CSV_HEADERS, "Completed Date"];
@@ -222,7 +242,7 @@ function EmployeeTaskView({
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base">
-            Today's Tasks
+            Today&apos;s Tasks
             <Badge variant="secondary" className="ml-2">
               {todayTasks.length}
             </Badge>
@@ -276,6 +296,8 @@ function TaskTable({
             <TableHead>Target Date</TableHead>
             <TableHead>Priority</TableHead>
             <TableHead>Status</TableHead>
+            <TableHead>Frequency</TableHead>
+            <TableHead>Department</TableHead>
             <TableHead>Completed At</TableHead>
           </TableRow>
         </TableHeader>
@@ -309,6 +331,12 @@ function TaskTable({
                   </Badge>
                 </TableCell>
                 <TableCell className="text-xs text-muted-foreground">
+                  {frequencyLabel(task)}
+                </TableCell>
+                <TableCell className="text-xs text-muted-foreground">
+                  {task.department || "-"}
+                </TableCell>
+                <TableCell className="text-xs text-muted-foreground">
                   {task.status === TaskStatus.done ? completedAt : "-"}
                 </TableCell>
               </TableRow>
@@ -320,7 +348,6 @@ function TaskTable({
   );
 }
 
-// Combined export button component that uses all tasks
 function ExportAllEmployeesCompletedButton({
   profiles,
 }: {
@@ -331,7 +358,6 @@ function ExportAllEmployeesCompletedButton({
     useCompletionDates();
 
   function handleExportAllCompleted() {
-    // Build a map of principal -> name
     const nameMap = new Map<string, string>();
     for (const entry of profiles) {
       nameMap.set(
@@ -340,7 +366,6 @@ function ExportAllEmployeesCompletedButton({
       );
     }
 
-    // Group completed tasks by employee, vertically
     const rows: string[][] = [];
     for (const entry of profiles) {
       const principalText = entry.principal.toText();
@@ -350,8 +375,20 @@ function ExportAllEmployeesCompletedButton({
           t.assignee.toText() === principalText && t.status === TaskStatus.done,
       );
       if (employeeDoneTasks.length === 0) continue;
-      // Add a blank separator row with employee name as header
-      rows.push([`--- ${employeeName} ---`, "", "", "", "", "", "", "", ""]);
+      // Separator row: enough columns to match COMPLETED_CSV_HEADERS length (11)
+      rows.push([
+        `--- ${employeeName} ---`,
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+      ]);
       for (const row of completedTasksToRows(
         employeeDoneTasks,
         employeeName,

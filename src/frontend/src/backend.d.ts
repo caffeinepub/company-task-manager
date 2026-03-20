@@ -26,6 +26,7 @@ export interface Task {
     priority: Priority;
     frequency: FrequencyType;
     frequencyDays: string;
+    department: string;
 }
 export interface UserProfile {
     name: string;
@@ -57,7 +58,7 @@ export interface backendInterface {
     assignUserRoleAsAdmin(user: Principal, role: UserRole): Promise<void>;
     bootstrapAdmin(): Promise<boolean>;
     countTasksByStatus(): Promise<[bigint, bigint, bigint]>;
-    createTask(title: string, description: string, assignee: Principal, targetDate: string, priority: Priority, frequency: FrequencyType, frequencyDays: string): Promise<bigint>;
+    createTask(title: string, description: string, assignee: Principal, targetDate: string, priority: Priority, frequency: FrequencyType, frequencyDays: string, department: string): Promise<bigint>;
     deleteTask(taskId: bigint): Promise<void>;
     getAdminCount(): Promise<bigint>;
     getAllTasks(): Promise<Array<Task>>;
