@@ -57,7 +57,7 @@ export function getEffectiveTargetDate(task: Task): string {
   return task.targetDate;
 }
 
-function getEffectiveStatus(
+export function getEffectiveStatus(
   task: Task,
   completionDates: Map<number, bigint>,
 ): TaskStatus {
@@ -74,10 +74,22 @@ function getEffectiveStatus(
   return task.status;
 }
 
-function isTaskActiveToday(task: Task): boolean {
+function isTaskActiveToday(
+  task: Task,
+  completionDates: Map<number, bigint>,
+): boolean {
+  const effectiveStatus = getEffectiveStatus(task, completionDates);
+  // If pending, always show as active today (carry-forward)
+  if (
+    effectiveStatus === TaskStatus.todo ||
+    effectiveStatus === TaskStatus.inProgress
+  ) {
+    return true;
+  }
+  // If done, only show as active if it's scheduled today
   const freq = task.frequency as FrequencyType;
-  if (freq === FrequencyType.none || freq === FrequencyType.daily) return true;
-
+  if (freq === FrequencyType.none) return true;
+  if (freq === FrequencyType.daily) return true;
   const now = new Date();
   if (freq === FrequencyType.weekly) {
     const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -86,8 +98,7 @@ function isTaskActiveToday(task: Task): boolean {
     return days.includes(todayName);
   }
   if (freq === FrequencyType.monthly) {
-    const dayOfMonth = now.getDate();
-    return String(dayOfMonth) === task.frequencyDays.trim();
+    return String(now.getDate()) === task.frequencyDays.trim();
   }
   return true;
 }
@@ -158,6 +169,11 @@ function TaskCard({
   const effectiveDate = getEffectiveTargetDate(task);
   const effectiveStatus = getEffectiveStatus(task, completionDates);
 
+  const isOverdue =
+    (effectiveStatus === TaskStatus.todo ||
+      effectiveStatus === TaskStatus.inProgress) &&
+    task.targetDate < todayStr();
+
   function handleStatusChange(val: string) {
     updateStatus.mutate(
       { taskId: task.id, status: val as TaskStatus },
@@ -186,6 +202,11 @@ function TaskCard({
               <span className="text-xs text-muted-foreground">
                 Target: {effectiveDate}
               </span>
+              {isOverdue && (
+                <Badge className="bg-red-100 text-red-700 border-0 text-xs">
+                  Overdue
+                </Badge>
+              )}
               {freqLabel && (
                 <Badge variant="outline" className="text-xs">
                   {freqLabel}
@@ -233,8 +254,12 @@ export default function MyTasksPage() {
   const { data: completionDates = new Map<number, bigint>() } =
     useCompletionDates();
 
-  const activeTasks = (tasks ?? []).filter(isTaskActiveToday);
-  const inactiveTasks = (tasks ?? []).filter((t) => !isTaskActiveToday(t));
+  const activeTasks = (tasks ?? []).filter((t) =>
+    isTaskActiveToday(t, completionDates),
+  );
+  const inactiveTasks = (tasks ?? []).filter(
+    (t) => !isTaskActiveToday(t, completionDates),
+  );
 
   return (
     <div className="max-w-4xl mx-auto space-y-5 animate-fade-up">
@@ -273,11 +298,11 @@ export default function MyTasksPage() {
         <div className="space-y-6">
           <div className="space-y-3">
             <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
-              Active Today ({activeTasks.length})
+              Pending Tasks ({activeTasks.length})
             </h2>
             {activeTasks.length === 0 ? (
               <p className="text-sm text-muted-foreground">
-                No tasks scheduled for today.
+                No pending tasks. Great work!
               </p>
             ) : (
               activeTasks.map((task, i) => (
@@ -294,7 +319,7 @@ export default function MyTasksPage() {
           {inactiveTasks.length > 0 && (
             <div className="space-y-3">
               <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
-                Not Scheduled Today ({inactiveTasks.length})
+                Completed / Not Due Today ({inactiveTasks.length})
               </h2>
               {inactiveTasks.map((task, i) => (
                 <TaskCard

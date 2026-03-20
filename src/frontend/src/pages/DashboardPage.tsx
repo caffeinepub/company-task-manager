@@ -2,7 +2,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Link } from "@tanstack/react-router";
-import { CheckSquare, Circle, Clock, TrendingUp, Users } from "lucide-react";
+import { AlertCircle, CheckSquare, TrendingUp, Users } from "lucide-react";
 import { motion } from "motion/react";
 import { Priority, TaskStatus } from "../backend.d";
 import type { Task } from "../backend.d";
@@ -64,7 +64,7 @@ function StatCard({
   loading,
 }: {
   title: string;
-  value: bigint | undefined;
+  value: bigint | number | undefined;
   icon: React.ReactNode;
   color: string;
   loading: boolean;
@@ -78,7 +78,9 @@ function StatCard({
             {loading ? (
               <Skeleton className="h-8 w-16" />
             ) : (
-              <p className="text-3xl font-bold">{value?.toString() ?? "0"}</p>
+              <p className="text-3xl font-bold">
+                {value !== undefined ? value.toString() : "0"}
+              </p>
             )}
           </div>
           <div
@@ -241,9 +243,11 @@ export default function DashboardPage() {
   const { data: myTasks, isLoading: myTasksLoading } = useMyTasks();
   const { data: allTasks, isLoading: allTasksLoading } = useAllTasks();
 
-  const recentTasks: Task[] = isAdmin
-    ? (allTasks ?? []).slice(0, 8)
-    : (myTasks ?? []).slice(0, 8);
+  const sourceTaskList: Task[] = isAdmin ? (allTasks ?? []) : (myTasks ?? []);
+  const pendingTasks = sourceTaskList.filter(
+    (t) => t.status === TaskStatus.todo || t.status === TaskStatus.inProgress,
+  );
+  const recentTasks = pendingTasks.slice(0, 8);
 
   const tasksLoading = isAdmin ? allTasksLoading : myTasksLoading;
 
@@ -253,6 +257,8 @@ export default function DashboardPage() {
     inProgress: inProgressCount,
     done: doneCount,
   } = stats ?? defaultStats;
+
+  const pendingCount = BigInt(todoCount) + BigInt(inProgressCount);
 
   return (
     <div className="max-w-5xl mx-auto space-y-6 animate-fade-up">
@@ -266,25 +272,18 @@ export default function DashboardPage() {
       </div>
 
       <div
-        className="grid grid-cols-1 sm:grid-cols-3 gap-4"
+        className="grid grid-cols-1 sm:grid-cols-2 gap-4"
         data-ocid="dashboard.stats.section"
       >
         <StatCard
-          title="To Do"
-          value={todoCount}
-          icon={<Circle size={18} className="text-gray-500" />}
-          color="bg-gray-100"
+          title="Pending Tasks"
+          value={pendingCount}
+          icon={<AlertCircle size={18} className="text-amber-500" />}
+          color="bg-amber-100"
           loading={statsLoading || adminLoading}
         />
         <StatCard
-          title="In Progress"
-          value={inProgressCount}
-          icon={<Clock size={18} className="text-blue-500" />}
-          color="bg-blue-100"
-          loading={statsLoading || adminLoading}
-        />
-        <StatCard
-          title="Done"
+          title="Completed Tasks"
           value={doneCount}
           icon={<CheckSquare size={18} className="text-green-500" />}
           color="bg-green-100"
@@ -304,7 +303,7 @@ export default function DashboardPage() {
           <div className="flex items-center justify-between">
             <CardTitle className="text-base flex items-center gap-2">
               <TrendingUp size={16} className="text-primary" />
-              Recent Tasks
+              Pending Tasks
             </CardTitle>
             <Link
               to={isAdmin ? "/all-tasks" : "/my-tasks"}
@@ -327,7 +326,7 @@ export default function DashboardPage() {
               className="py-8 text-center text-sm text-muted-foreground"
               data-ocid="dashboard.empty_state"
             >
-              No tasks yet.{" "}
+              No pending tasks.{" "}
               {isAdmin && (
                 <Link
                   to="/create-task"
