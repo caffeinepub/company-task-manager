@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   BarChart2,
+  CheckCircle2,
   Clock,
   Loader2,
   Search,
@@ -13,60 +14,104 @@ import {
   X,
 } from "lucide-react";
 import { useMemo, useState } from "react";
-import { TaskStatus } from "../backend.d";
+import { FrequencyType } from "../backend.d";
 import type { Task, UserProfileEntry } from "../backend.d";
 import {
   useAllUserProfiles,
-  useCompletionDates,
   useIsAdmin,
+  useTaskInstanceCompletions,
   useTasksByEmployee,
 } from "../hooks/useQueries";
 
-function classifyTask(
-  task: Task,
-  completionDates: Map<number, bigint>,
-): "onTime" | "delayed" | "pending" {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const due = new Date(task.targetDate);
-  due.setHours(23, 59, 59, 999);
-
-  if (task.status === TaskStatus.done) {
-    const ts = completionDates.get(Number(task.id));
-    if (ts !== undefined) {
-      const completedDate = new Date(Number(ts / 1_000_000n));
-      return completedDate <= due ? "onTime" : "delayed";
-    }
-    return "onTime";
-  }
-
-  const dueDay = new Date(task.targetDate);
-  dueDay.setHours(0, 0, 0, 0);
-  if (dueDay < today) return "delayed";
-  return "pending";
+// Format a Date as "YYYY-MM-DD"
+function dateToStr(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
-interface EmployeeStats {
-  total: number;
-  onTime: number;
-  delayed: number;
-  pending: number;
+function today0(): Date {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d;
 }
 
-function computeStats(
+interface TaskInstance {
+  taskId: bigint;
+  taskName: string;
+  instanceDate: string; // YYYY-MM-DD
+  status: "onTime" | "delayed" | "pending";
+}
+
+function generateInstances(
   tasks: Task[],
-  completionDates: Map<number, bigint>,
-): EmployeeStats {
-  let onTime = 0;
-  let delayed = 0;
-  let pending = 0;
+  completions: Map<string, bigint>,
+  fromDate: string,
+  toDate: string,
+): TaskInstance[] {
+  const _todayStr = dateToStr(today0());
+  const instances: TaskInstance[] = [];
+
+  const from = fromDate ? new Date(`${fromDate}T00:00:00`) : null;
+  const to = toDate ? new Date(`${toDate}T23:59:59`) : null;
+
   for (const task of tasks) {
-    const cat = classifyTask(task, completionDates);
-    if (cat === "onTime") onTime++;
-    else if (cat === "delayed") delayed++;
-    else pending++;
+    const isDaily =
+      task.frequency === FrequencyType.daily ||
+      String(task.frequency) === "daily" ||
+      (task.frequency as any)?.daily !== undefined;
+
+    const baseDate = task.targetDate; // YYYY-MM-DD string
+
+    const datesToProcess: string[] = [];
+
+    if (isDaily) {
+      // Generate one instance per day from baseDate up to today
+      const start = new Date(`${baseDate}T00:00:00`);
+      const end = today0();
+      const cur = new Date(start);
+      while (cur <= end) {
+        datesToProcess.push(dateToStr(cur));
+        cur.setDate(cur.getDate() + 1);
+      }
+    } else {
+      datesToProcess.push(baseDate);
+    }
+
+    for (const dateStr of datesToProcess) {
+      // Apply date range filter
+      if (from || to) {
+        const d = new Date(`${dateStr}T00:00:00`);
+        if (from && d < from) continue;
+        if (to && d > to) continue;
+      }
+
+      const key = `${task.id}_${dateStr}`;
+      const completionTs = completions.get(key);
+
+      let status: "onTime" | "delayed" | "pending";
+      if (completionTs !== undefined) {
+        const completedDate = new Date(Number(completionTs / 1_000_000n));
+        completedDate.setHours(0, 0, 0, 0);
+        const instanceDay = new Date(`${dateStr}T00:00:00`);
+        status = completedDate <= instanceDay ? "onTime" : "delayed";
+      } else {
+        status = "pending";
+      }
+
+      instances.push({
+        taskId: task.id,
+        taskName: task.title,
+        instanceDate: dateStr,
+        status,
+      });
+    }
   }
-  return { total: tasks.length, onTime, delayed, pending };
+
+  // Sort by date desc
+  instances.sort((a, b) => b.instanceDate.localeCompare(a.instanceDate));
+  return instances;
 }
 
 function pct(count: number, total: number) {
@@ -92,20 +137,37 @@ function BarRow({ label, count, total, color, bgColor, icon }: BarRowProps) {
           {icon}
           {label}
         </div>
-        <span className="text-muted-foreground">
-          {count} task{count !== 1 ? "s" : ""} — {percentage}%
+        <span className="font-semibold" style={{ color }}>
+          {count} ({percentage}%)
         </span>
       </div>
-      <div
-        className="h-4 rounded-full overflow-hidden"
-        style={{ background: "oklch(var(--muted))" }}
-      >
+      <div className="h-5 rounded-full overflow-hidden bg-muted">
         <div
           className="h-full rounded-full transition-all duration-700"
           style={{ width: `${percentage}%`, background: bgColor }}
         />
       </div>
     </div>
+  );
+}
+
+function StatusBadge({ status }: { status: "onTime" | "delayed" | "pending" }) {
+  if (status === "onTime")
+    return (
+      <Badge className="bg-green-100 text-green-800 border-green-200 dark:bg-green-900/30 dark:text-green-300">
+        <CheckCircle2 size={11} className="mr-1" /> On Time
+      </Badge>
+    );
+  if (status === "delayed")
+    return (
+      <Badge className="bg-red-100 text-red-800 border-red-200 dark:bg-red-900/30 dark:text-red-300">
+        <TrendingDown size={11} className="mr-1" /> Delayed
+      </Badge>
+    );
+  return (
+    <Badge className="bg-yellow-100 text-yellow-800 border-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-300">
+      <Clock size={11} className="mr-1" /> Pending
+    </Badge>
   );
 }
 
@@ -123,33 +185,23 @@ function EmployeePerformance({
   const { data: tasks = [], isLoading: loadingTasks } =
     useTasksByEmployee(principalText);
   const {
-    data: completionDates = new Map<number, bigint>(),
-    isLoading: loadingDates,
-  } = useCompletionDates();
+    data: completions = new Map<string, bigint>(),
+    isLoading: loadingCompletions,
+  } = useTaskInstanceCompletions();
 
-  const isLoading = loadingTasks || loadingDates;
+  const isLoading = loadingTasks || loadingCompletions;
 
-  const filteredTasks = useMemo(() => {
-    let result = tasks;
-    if (fromDate) {
-      const from = new Date(fromDate);
-      from.setHours(0, 0, 0, 0);
-      result = result.filter((t) => new Date(t.targetDate) >= from);
-    }
-    if (toDate) {
-      const to = new Date(toDate);
-      to.setHours(23, 59, 59, 999);
-      result = result.filter((t) => new Date(t.targetDate) <= to);
-    }
-    return result;
-  }, [tasks, fromDate, toDate]);
-
-  const stats = useMemo(
-    () => computeStats(filteredTasks, completionDates),
-    [filteredTasks, completionDates],
+  const instances = useMemo(
+    () => generateInstances(tasks, completions, fromDate, toDate),
+    [tasks, completions, fromDate, toDate],
   );
 
-  const isFiltered = fromDate || toDate;
+  const stats = useMemo(() => {
+    const onTime = instances.filter((i) => i.status === "onTime").length;
+    const delayed = instances.filter((i) => i.status === "delayed").length;
+    const pending = instances.filter((i) => i.status === "pending").length;
+    return { total: instances.length, onTime, delayed, pending };
+  }, [instances]);
 
   if (isLoading) {
     return (
@@ -165,7 +217,7 @@ function EmployeePerformance({
     );
   }
 
-  if (filteredTasks.length === 0) {
+  if (instances.length === 0) {
     return (
       <div
         className="flex flex-col items-center justify-center py-12 text-center"
@@ -173,8 +225,8 @@ function EmployeePerformance({
       >
         <BarChart2 className="h-10 w-10 text-muted-foreground mb-3" />
         <p className="text-muted-foreground">
-          {isFiltered
-            ? "No tasks found for the selected date range."
+          {fromDate || toDate
+            ? "No task instances found for the selected date range."
             : "No tasks assigned to this employee yet."}
         </p>
       </div>
@@ -183,12 +235,20 @@ function EmployeePerformance({
 
   return (
     <div className="space-y-6">
-      {isFiltered && (
-        <p className="text-xs text-muted-foreground">
-          Showing {filteredTasks.length} of {tasks.length} task
-          {tasks.length !== 1 ? "s" : ""} in selected date range
-        </p>
-      )}
+      {/* Header summary */}
+      <Card className="border-primary/30 bg-primary/5">
+        <CardContent className="pt-5 pb-4">
+          <p className="text-sm font-bold uppercase tracking-wider text-primary mb-1">
+            PERFORMANCE SCORES
+          </p>
+          <p className="text-lg font-semibold text-foreground">
+            Total: <span className="text-primary">{stats.total} Tasks</span>
+            <span className="text-sm font-normal text-muted-foreground ml-2">
+              (including daily rollovers)
+            </span>
+          </p>
+        </CardContent>
+      </Card>
 
       {/* Stat cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
@@ -198,6 +258,7 @@ function EmployeePerformance({
               Total
             </p>
             <p className="text-3xl font-bold text-foreground">{stats.total}</p>
+            <p className="text-xs text-muted-foreground mt-1">100%</p>
           </CardContent>
         </Card>
         <Card data-ocid="performance.ontime.card">
@@ -207,9 +268,12 @@ function EmployeePerformance({
             </p>
             <p
               className="text-3xl font-bold"
-              style={{ color: "oklch(0.65 0.18 142)" }}
+              style={{ color: "oklch(0.55 0.18 142)" }}
             >
               {stats.onTime}
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              {pct(stats.onTime, stats.total)}%
             </p>
           </CardContent>
         </Card>
@@ -220,9 +284,12 @@ function EmployeePerformance({
             </p>
             <p
               className="text-3xl font-bold"
-              style={{ color: "oklch(0.62 0.21 27)" }}
+              style={{ color: "oklch(0.55 0.21 27)" }}
             >
               {stats.delayed}
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              {pct(stats.delayed, stats.total)}%
             </p>
           </CardContent>
         </Card>
@@ -233,25 +300,31 @@ function EmployeePerformance({
             </p>
             <p
               className="text-3xl font-bold"
-              style={{ color: "oklch(0.72 0.17 60)" }}
+              style={{ color: "oklch(0.62 0.17 60)" }}
             >
               {stats.pending}
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              {pct(stats.pending, stats.total)}%
             </p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Bar chart */}
+      {/* Visual bar chart */}
       <Card data-ocid="performance.chart.card">
         <CardHeader>
-          <CardTitle className="text-base">Performance Breakdown</CardTitle>
+          <CardTitle className="text-base flex items-center gap-2">
+            <BarChart2 size={16} className="text-primary" />
+            Performance Breakdown
+          </CardTitle>
         </CardHeader>
         <CardContent className="space-y-5">
           <BarRow
             label="On Time"
             count={stats.onTime}
             total={stats.total}
-            color="oklch(0.55 0.18 142)"
+            color="oklch(0.45 0.18 142)"
             bgColor="oklch(0.65 0.18 142)"
             icon={<TrendingUp size={15} />}
           />
@@ -259,7 +332,7 @@ function EmployeePerformance({
             label="Delayed"
             count={stats.delayed}
             total={stats.total}
-            color="oklch(0.55 0.21 27)"
+            color="oklch(0.48 0.21 27)"
             bgColor="oklch(0.62 0.21 27)"
             icon={<TrendingDown size={15} />}
           />
@@ -267,10 +340,112 @@ function EmployeePerformance({
             label="Pending"
             count={stats.pending}
             total={stats.total}
-            color="oklch(0.58 0.17 60)"
+            color="oklch(0.50 0.17 60)"
             bgColor="oklch(0.72 0.17 60)"
             icon={<Clock size={15} />}
           />
+          {/* Combined bar */}
+          <div className="pt-2 border-t">
+            <p className="text-xs text-muted-foreground mb-2">Combined View</p>
+            <div className="h-6 rounded-full overflow-hidden flex">
+              <div
+                className="h-full transition-all duration-700"
+                style={{
+                  width: `${pct(stats.onTime, stats.total)}%`,
+                  background: "oklch(0.65 0.18 142)",
+                }}
+                title={`On Time: ${stats.onTime}`}
+              />
+              <div
+                className="h-full transition-all duration-700"
+                style={{
+                  width: `${pct(stats.delayed, stats.total)}%`,
+                  background: "oklch(0.62 0.21 27)",
+                }}
+                title={`Delayed: ${stats.delayed}`}
+              />
+              <div
+                className="h-full transition-all duration-700"
+                style={{
+                  width: `${pct(stats.pending, stats.total)}%`,
+                  background: "oklch(0.72 0.17 60)",
+                }}
+                title={`Pending: ${stats.pending}`}
+              />
+            </div>
+            <div className="flex gap-4 mt-2">
+              <span className="flex items-center gap-1 text-xs">
+                <span
+                  className="inline-block w-3 h-3 rounded-full"
+                  style={{ background: "oklch(0.65 0.18 142)" }}
+                />
+                On Time
+              </span>
+              <span className="flex items-center gap-1 text-xs">
+                <span
+                  className="inline-block w-3 h-3 rounded-full"
+                  style={{ background: "oklch(0.62 0.21 27)" }}
+                />
+                Delayed
+              </span>
+              <span className="flex items-center gap-1 text-xs">
+                <span
+                  className="inline-block w-3 h-3 rounded-full"
+                  style={{ background: "oklch(0.72 0.17 60)" }}
+                />
+                Pending
+              </span>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Detail table */}
+      <Card data-ocid="performance.table">
+        <CardHeader>
+          <CardTitle className="text-base">Task Instance Details</CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b bg-muted/40">
+                  <th className="text-left px-4 py-3 font-medium text-muted-foreground">
+                    #
+                  </th>
+                  <th className="text-left px-4 py-3 font-medium text-muted-foreground">
+                    Task Name
+                  </th>
+                  <th className="text-left px-4 py-3 font-medium text-muted-foreground">
+                    Target Date
+                  </th>
+                  <th className="text-left px-4 py-3 font-medium text-muted-foreground">
+                    Status
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {instances.map((inst, idx) => (
+                  <tr
+                    key={`${inst.taskId}_${inst.instanceDate}`}
+                    className="border-b last:border-0 hover:bg-muted/20 transition-colors"
+                    data-ocid={`performance.row.item.${idx + 1}`}
+                  >
+                    <td className="px-4 py-3 text-muted-foreground">
+                      {idx + 1}
+                    </td>
+                    <td className="px-4 py-3 font-medium">{inst.taskName}</td>
+                    <td className="px-4 py-3 text-muted-foreground">
+                      {inst.instanceDate}
+                    </td>
+                    <td className="px-4 py-3">
+                      <StatusBadge status={inst.status} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </CardContent>
       </Card>
     </div>
@@ -335,8 +510,8 @@ export default function PerformancePage() {
           Performance Dashboard
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Search by employee name and filter by date range to view performance
-          metrics.
+          Scores across ALL daily task instances including rollovers. Search by
+          employee and filter by date range.
         </p>
       </div>
 
@@ -362,7 +537,6 @@ export default function PerformancePage() {
               onFocus={() => setShowDropdown(true)}
             />
 
-            {/* Dropdown */}
             {showDropdown && filtered.length > 0 && (
               <div
                 className="absolute z-10 mt-1 w-full rounded-md border bg-card shadow-lg"
@@ -472,7 +646,7 @@ export default function PerformancePage() {
             No employee selected
           </p>
           <p className="text-sm text-muted-foreground mt-1">
-            Search for an employee to view their performance
+            Search for an employee above to view their performance scores
           </p>
         </div>
       )}

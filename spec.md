@@ -1,34 +1,38 @@
 # Company Task Manager
 
 ## Current State
-The app has daily/weekly/monthly recurring tasks. Daily tasks show today's date as target date and reset to "todo" if completed on a prior day. However, missed daily tasks do NOT generate multiple instances - each daily task is a single record, so there's no way to show "Task A (target: yesterday)" AND "Task A (target: today)" as separate pending items. Backend tracks completions per taskId only (one completion timestamp per task).
+The app has a full task management system with daily rollover logic, instance-based completion tracking, and CSV exports. The Employee Panel exports tasks in a detailed format (Task ID, Title, Description, Employee, Target Date, Priority, Status, Created At, Frequency, Department, Completed Date).
 
-Employee Panel has Export All Employees Completed CSV but no combined pending+complete CSV.
+The `expandAllTaskInstances` utility generates per-day instances for daily tasks, tracking each by `taskId_YYYY-MM-DD` key. Instance completions are stored via `markTaskInstanceDone` / `unmarkTaskInstanceDone`.
 
 ## Requested Changes (Diff)
 
 ### Add
-- Backend: `taskInstanceCompletions` stable map keyed by `"taskId_YYYY-MM-DD"` storing completion timestamp (Int)
-- Backend: `markTaskInstanceDone(taskId, targetDate)` - marks specific (task, date) instance as done
-- Backend: `unmarkTaskInstanceDone(taskId, targetDate)` - un-marks a specific instance
-- Backend: `getTaskInstanceCompletions()` - returns all completed instance keys and timestamps
-- Frontend: Daily task rollover logic - generate one virtual instance per calendar day from task creation date to today for each daily task
-- Frontend: Each instance shown separately with Task Name + Target Date + Status in My Tasks and Dashboard
-- Frontend: Pending count = count of all undone daily instances + other pending tasks
-- Frontend: Mark instance done marks that specific (taskId, targetDate) pair
-- Frontend: New "Export All Assignees Pending & Complete (CSV)" button in Employee Panel
+- A dedicated "Export by Date & Assignee (CSV)" button in the Employee Panel (both global and per-employee views) that outputs tasks in this exact format:
+  `Date,Assignee,Task_Name,Status,Completion_Date,Target_Date`
+  - Date = target date of the instance (DD-MM-YYYY format)
+  - Assignee = employee name
+  - Task_Name = task title
+  - Status = "Pending" or "Completed" (never todo/inProgress/done)
+  - Completion_Date = date completed in DD-MM-YYYY format (blank if pending)
+  - Target_Date = same as Date column (DD-MM-YYYY)
+  - Rows sorted by Date then Assignee
+  - Includes ALL task instances (daily rollover instances + non-daily tasks)
+  - For non-daily tasks: status is "Completed" if task.status === done, else "Pending"
+  - For daily tasks: status is "Completed" if instanceCompletions has the key, else "Pending"
 
 ### Modify
-- My Tasks page: daily tasks now render as multiple date-specific instances
-- Dashboard: pending count and task list reflect daily task instances
-- Employee Panel: assignee task view shows instances; new CSV export button
+- The existing "Export All Assignees Pending & Complete (CSV)" button should remain but also add the new simplified export above it labeled "Export Tracking Report (CSV)"
+- In the per-employee EmployeeTaskView, add a similar "Export Tracking Report (CSV)" button alongside the existing buttons
 
 ### Remove
-- Nothing removed; backward compatible
+Nothing removed.
 
 ## Implementation Plan
-1. Update backend main.mo to add taskInstanceCompletions map and related query/update functions
-2. Regenerate backend.d.ts bindings
-3. Update frontend hooks (useQueries) to call new instance completion endpoints
-4. Rewrite daily task expansion logic in MyTasksPage and DashboardPage
-5. Add new combined CSV export to EmployeePanelPage
+1. In `EmployeePanelPage.tsx`:
+   - Add a helper `toDisplayDate(dateStr: string)` that converts YYYY-MM-DD to DD-MM-YYYY
+   - Add `buildTrackingReportRows()` function that iterates all employees, expands task instances, and produces rows in the required format sorted by date + assignee
+   - Add "Export Tracking Report (CSV)" button in `ExportAllEmployeesCompletedButton` component
+   - Add per-employee "Export Tracking Report (CSV)" button in `EmployeeTaskView`
+   - Status mapping: isDone → "Completed", else → "Pending"
+   - Completion_Date: if isDone, format completedAt timestamp as DD-MM-YYYY, else blank

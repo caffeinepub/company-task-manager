@@ -96,6 +96,80 @@ function downloadCSV(filename: string, rows: string[][], headers: string[]) {
   URL.revokeObjectURL(url);
 }
 
+function toDisplayDate(dateStr: string): string {
+  const [y, m, d] = dateStr.split("-");
+  return `${d}-${m}-${y}`;
+}
+
+function buildTrackingRows(
+  profiles: UserProfileEntry[],
+  allTasks: Task[],
+  instanceCompletions: Map<string, bigint>,
+  filterPrincipal?: string,
+): string[][] {
+  const rows: string[][] = [];
+
+  const targetProfiles = filterPrincipal
+    ? profiles.filter((e) => e.principal.toText() === filterPrincipal)
+    : profiles;
+
+  for (const entry of targetProfiles) {
+    const principalText = entry.principal.toText();
+    const employeeName = entry.profile.name || principalText;
+    const employeeTasks = allTasks.filter(
+      (t) => t.assignee.toText() === principalText,
+    );
+    if (employeeTasks.length === 0) continue;
+
+    const { pendingInstances, doneInstances } = expandAllTaskInstances(
+      employeeTasks,
+      instanceCompletions,
+    );
+    const allInsts = [...pendingInstances, ...doneInstances];
+
+    for (const inst of allInsts) {
+      const completionDate =
+        inst.isDone && inst.completedAt
+          ? toDisplayDate(
+              new Date(Number(inst.completedAt / 1_000_000n))
+                .toISOString()
+                .slice(0, 10),
+            )
+          : "";
+      rows.push([
+        toDisplayDate(inst.targetDate),
+        employeeName,
+        inst.task.title,
+        inst.isDone ? "Completed" : "Pending",
+        completionDate,
+        toDisplayDate(inst.targetDate),
+      ]);
+    }
+  }
+
+  rows.sort((a, b) => {
+    // a[0] and b[0] are DD-MM-YYYY, convert to YYYY-MM-DD for sorting
+    const toSortable = (dd: string) => {
+      const [d, m, y] = dd.split("-");
+      return `${y}-${m}-${d}`;
+    };
+    const dateCmp = toSortable(a[0]).localeCompare(toSortable(b[0]));
+    if (dateCmp !== 0) return dateCmp;
+    return a[1].localeCompare(b[1]);
+  });
+
+  return rows;
+}
+
+const TRACKING_CSV_HEADERS = [
+  "Date",
+  "Assignee",
+  "Task_Name",
+  "Status",
+  "Completion_Date",
+  "Target_Date",
+];
+
 function tasksToRows(tasks: Task[], employeeName: string): string[][] {
   return tasks.map((t) => [
     String(t.id),
@@ -179,6 +253,7 @@ function EmployeeTaskView({
     useCompletionDates();
   const { data: instanceCompletions = new Map<string, bigint>() } =
     useTaskInstanceCompletions();
+  const { data: allProfiles = [] } = useAllUserProfiles();
   const today = getTodayString();
   const todayTasks = tasks.filter((t) => t.targetDate === today);
   const employeeName = entry.profile.name || principalText;
@@ -204,6 +279,20 @@ function EmployeeTaskView({
       `completed_tasks_${employeeName}.csv`,
       completedTasksToRows(done, employeeName, completionDates),
       COMPLETED_CSV_HEADERS,
+    );
+  }
+
+  function handleExportTracking() {
+    const rows = buildTrackingRows(
+      allProfiles,
+      tasks,
+      instanceCompletions,
+      principalText,
+    );
+    downloadCSV(
+      `task_tracking_${employeeName}.csv`,
+      rows,
+      TRACKING_CSV_HEADERS,
     );
   }
 
@@ -240,6 +329,16 @@ function EmployeeTaskView({
           )}
         </div>
         <div className="flex gap-2 flex-wrap">
+          <Button
+            variant="default"
+            size="sm"
+            onClick={handleExportTracking}
+            className="gap-1.5"
+            data-ocid="employee_panel.export_tracking.button"
+          >
+            <Download size={14} />
+            Export Tracking Report (CSV)
+          </Button>
           <Button
             variant="outline"
             size="sm"
@@ -566,10 +665,26 @@ function ExportAllEmployeesCompletedButton({
     downloadCSV("all_assignees_all_tasks.csv", rows, ALL_ASSIGNEES_CSV_HEADERS);
   }
 
+  function handleExportTrackingReport() {
+    const rows = buildTrackingRows(profiles, allTasks, instanceCompletions);
+    if (rows.length === 0) return;
+    downloadCSV("task_tracking_report.csv", rows, TRACKING_CSV_HEADERS);
+  }
+
   return (
     <div className="flex gap-2 flex-wrap">
       <Button
         variant="default"
+        size="sm"
+        onClick={handleExportTrackingReport}
+        className="gap-1.5"
+        data-ocid="employee_panel.export_tracking_report.button"
+      >
+        <Download size={14} />
+        Export Tracking Report (CSV)
+      </Button>
+      <Button
+        variant="outline"
         size="sm"
         onClick={handleExportAllCompleted}
         className="gap-1.5"
