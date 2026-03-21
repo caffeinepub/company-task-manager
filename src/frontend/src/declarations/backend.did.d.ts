@@ -14,11 +14,6 @@ export interface CompletionDate {
   'taskId' : bigint,
   'completionTimestamp' : bigint,
 }
-export interface CountByStatusResult {
-  'done' : bigint,
-  'todo' : bigint,
-  'inProgress' : bigint,
-}
 export type FrequencyType = { 'none' : null } |
   { 'monthly' : null } |
   { 'daily' : null } |
@@ -26,10 +21,7 @@ export type FrequencyType = { 'none' : null } |
 export type Priority = { 'low' : null } |
   { 'high' : null } |
   { 'medium' : null };
-export type TaskStatus = { 'done' : null } |
-  { 'todo' : null } |
-  { 'inProgress' : null };
-export interface TaskV3 {
+export interface Task {
   'id' : bigint,
   'status' : TaskStatus,
   'assignee' : Principal,
@@ -42,6 +34,9 @@ export interface TaskV3 {
   'frequency' : FrequencyType,
   'department' : string,
 }
+export type TaskStatus = { 'done' : null } |
+  { 'todo' : null } |
+  { 'inProgress' : null };
 export interface UserProfile { 'name' : string, 'email' : string }
 export interface UserProfileEntry {
   'principal' : Principal,
@@ -55,7 +50,7 @@ export interface _SERVICE {
   'assignCallerUserRole' : ActorMethod<[Principal, UserRole], undefined>,
   'assignUserRoleAsAdmin' : ActorMethod<[Principal, UserRole], undefined>,
   'bootstrapAdmin' : ActorMethod<[], boolean>,
-  'countTasksByStatus' : ActorMethod<[], CountByStatusResult>,
+  'countTasksByStatus' : ActorMethod<[], [bigint, bigint, bigint]>,
   'createTask' : ActorMethod<
     [
       string,
@@ -71,18 +66,21 @@ export interface _SERVICE {
   >,
   'deleteTask' : ActorMethod<[bigint], undefined>,
   'getAdminCount' : ActorMethod<[], bigint>,
-  'getAllTasks' : ActorMethod<[], Array<TaskV3>>,
+  'getAllTasks' : ActorMethod<[], Array<Task>>,
   'getAllUserProfiles' : ActorMethod<[], Array<UserProfileEntry>>,
   'getCallerUserProfile' : ActorMethod<[], [] | [UserProfile]>,
   'getCallerUserRole' : ActorMethod<[], UserRole>,
   'getCompletionDates' : ActorMethod<[], Array<CompletionDate>>,
-  'getMyTasks' : ActorMethod<[], Array<TaskV3>>,
-  'getTask' : ActorMethod<[bigint], [] | [TaskV3]>,
-  'getTasksByEmployee' : ActorMethod<[Principal], Array<TaskV3>>,
+  'getMyTasks' : ActorMethod<[], Array<Task>>,
+  'getTask' : ActorMethod<[bigint], [] | [Task]>,
+  'getTaskInstanceCompletions' : ActorMethod<[], Array<[string, bigint]>>,
+  'getTasksByEmployee' : ActorMethod<[Principal], Array<Task>>,
   'getUserProfile' : ActorMethod<[Principal], [] | [UserProfile]>,
   'hasAnyAdmin' : ActorMethod<[], boolean>,
   'isCallerAdmin' : ActorMethod<[], boolean>,
+  'markTaskInstanceDone' : ActorMethod<[bigint, string], undefined>,
   'saveCallerUserProfile' : ActorMethod<[UserProfile], undefined>,
+  'unmarkTaskInstanceDone' : ActorMethod<[bigint, string], undefined>,
   'updateTaskStatus' : ActorMethod<[bigint, TaskStatus], undefined>,
 }
 export declare const idlService: IDL.ServiceClass;

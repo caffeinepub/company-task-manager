@@ -13,11 +13,6 @@ export const UserRole = IDL.Variant({
   'user' : IDL.Null,
   'guest' : IDL.Null,
 });
-export const CountByStatusResult = IDL.Record({
-  'done' : IDL.Nat,
-  'todo' : IDL.Nat,
-  'inProgress' : IDL.Nat,
-});
 export const Priority = IDL.Variant({
   'low' : IDL.Null,
   'high' : IDL.Null,
@@ -34,7 +29,7 @@ export const TaskStatus = IDL.Variant({
   'todo' : IDL.Null,
   'inProgress' : IDL.Null,
 });
-export const TaskV3 = IDL.Record({
+export const Task = IDL.Record({
   'id' : IDL.Nat,
   'status' : TaskStatus,
   'assignee' : IDL.Principal,
@@ -65,7 +60,7 @@ export const idlService = IDL.Service({
   'assignCallerUserRole' : IDL.Func([IDL.Principal, UserRole], [], []),
   'assignUserRoleAsAdmin' : IDL.Func([IDL.Principal, UserRole], [], []),
   'bootstrapAdmin' : IDL.Func([], [IDL.Bool], []),
-  'countTasksByStatus' : IDL.Func([], [CountByStatusResult], ['query']),
+  'countTasksByStatus' : IDL.Func([], [IDL.Nat, IDL.Nat, IDL.Nat], ['query']),
   'createTask' : IDL.Func(
       [
         IDL.Text,
@@ -82,18 +77,19 @@ export const idlService = IDL.Service({
     ),
   'deleteTask' : IDL.Func([IDL.Nat], [], []),
   'getAdminCount' : IDL.Func([], [IDL.Nat], ['query']),
-  'getAllTasks' : IDL.Func([], [IDL.Vec(TaskV3)], ['query']),
+  'getAllTasks' : IDL.Func([], [IDL.Vec(Task)], ['query']),
   'getAllUserProfiles' : IDL.Func([], [IDL.Vec(UserProfileEntry)], ['query']),
   'getCallerUserProfile' : IDL.Func([], [IDL.Opt(UserProfile)], ['query']),
   'getCallerUserRole' : IDL.Func([], [UserRole], ['query']),
   'getCompletionDates' : IDL.Func([], [IDL.Vec(CompletionDate)], ['query']),
-  'getMyTasks' : IDL.Func([], [IDL.Vec(TaskV3)], ['query']),
-  'getTask' : IDL.Func([IDL.Nat], [IDL.Opt(TaskV3)], ['query']),
-  'getTasksByEmployee' : IDL.Func(
-      [IDL.Principal],
-      [IDL.Vec(TaskV3)],
+  'getMyTasks' : IDL.Func([], [IDL.Vec(Task)], ['query']),
+  'getTask' : IDL.Func([IDL.Nat], [IDL.Opt(Task)], ['query']),
+  'getTaskInstanceCompletions' : IDL.Func(
+      [],
+      [IDL.Vec(IDL.Tuple(IDL.Text, IDL.Int))],
       ['query'],
     ),
+  'getTasksByEmployee' : IDL.Func([IDL.Principal], [IDL.Vec(Task)], ['query']),
   'getUserProfile' : IDL.Func(
       [IDL.Principal],
       [IDL.Opt(UserProfile)],
@@ -101,7 +97,9 @@ export const idlService = IDL.Service({
     ),
   'hasAnyAdmin' : IDL.Func([], [IDL.Bool], ['query']),
   'isCallerAdmin' : IDL.Func([], [IDL.Bool], ['query']),
+  'markTaskInstanceDone' : IDL.Func([IDL.Nat, IDL.Text], [], []),
   'saveCallerUserProfile' : IDL.Func([UserProfile], [], []),
+  'unmarkTaskInstanceDone' : IDL.Func([IDL.Nat, IDL.Text], [], []),
   'updateTaskStatus' : IDL.Func([IDL.Nat, TaskStatus], [], []),
 });
 
@@ -112,11 +110,6 @@ export const idlFactory = ({ IDL }) => {
     'admin' : IDL.Null,
     'user' : IDL.Null,
     'guest' : IDL.Null,
-  });
-  const CountByStatusResult = IDL.Record({
-    'done' : IDL.Nat,
-    'todo' : IDL.Nat,
-    'inProgress' : IDL.Nat,
   });
   const Priority = IDL.Variant({
     'low' : IDL.Null,
@@ -134,7 +127,7 @@ export const idlFactory = ({ IDL }) => {
     'todo' : IDL.Null,
     'inProgress' : IDL.Null,
   });
-  const TaskV3 = IDL.Record({
+  const Task = IDL.Record({
     'id' : IDL.Nat,
     'status' : TaskStatus,
     'assignee' : IDL.Principal,
@@ -162,7 +155,7 @@ export const idlFactory = ({ IDL }) => {
     'assignCallerUserRole' : IDL.Func([IDL.Principal, UserRole], [], []),
     'assignUserRoleAsAdmin' : IDL.Func([IDL.Principal, UserRole], [], []),
     'bootstrapAdmin' : IDL.Func([], [IDL.Bool], []),
-    'countTasksByStatus' : IDL.Func([], [CountByStatusResult], ['query']),
+    'countTasksByStatus' : IDL.Func([], [IDL.Nat, IDL.Nat, IDL.Nat], ['query']),
     'createTask' : IDL.Func(
         [
           IDL.Text,
@@ -179,16 +172,21 @@ export const idlFactory = ({ IDL }) => {
       ),
     'deleteTask' : IDL.Func([IDL.Nat], [], []),
     'getAdminCount' : IDL.Func([], [IDL.Nat], ['query']),
-    'getAllTasks' : IDL.Func([], [IDL.Vec(TaskV3)], ['query']),
+    'getAllTasks' : IDL.Func([], [IDL.Vec(Task)], ['query']),
     'getAllUserProfiles' : IDL.Func([], [IDL.Vec(UserProfileEntry)], ['query']),
     'getCallerUserProfile' : IDL.Func([], [IDL.Opt(UserProfile)], ['query']),
     'getCallerUserRole' : IDL.Func([], [UserRole], ['query']),
     'getCompletionDates' : IDL.Func([], [IDL.Vec(CompletionDate)], ['query']),
-    'getMyTasks' : IDL.Func([], [IDL.Vec(TaskV3)], ['query']),
-    'getTask' : IDL.Func([IDL.Nat], [IDL.Opt(TaskV3)], ['query']),
+    'getMyTasks' : IDL.Func([], [IDL.Vec(Task)], ['query']),
+    'getTask' : IDL.Func([IDL.Nat], [IDL.Opt(Task)], ['query']),
+    'getTaskInstanceCompletions' : IDL.Func(
+        [],
+        [IDL.Vec(IDL.Tuple(IDL.Text, IDL.Int))],
+        ['query'],
+      ),
     'getTasksByEmployee' : IDL.Func(
         [IDL.Principal],
-        [IDL.Vec(TaskV3)],
+        [IDL.Vec(Task)],
         ['query'],
       ),
     'getUserProfile' : IDL.Func(
@@ -198,7 +196,9 @@ export const idlFactory = ({ IDL }) => {
       ),
     'hasAnyAdmin' : IDL.Func([], [IDL.Bool], ['query']),
     'isCallerAdmin' : IDL.Func([], [IDL.Bool], ['query']),
+    'markTaskInstanceDone' : IDL.Func([IDL.Nat, IDL.Text], [], []),
     'saveCallerUserProfile' : IDL.Func([UserProfile], [], []),
+    'unmarkTaskInstanceDone' : IDL.Func([IDL.Nat, IDL.Text], [], []),
     'updateTaskStatus' : IDL.Func([IDL.Nat, TaskStatus], [], []),
   });
 };

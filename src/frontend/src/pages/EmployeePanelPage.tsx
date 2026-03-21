@@ -18,8 +18,11 @@ import {
   useAllUserProfiles,
   useCompletionDates,
   useIsAdmin,
+  useTaskInstanceCompletions,
   useTasksByEmployee,
 } from "../hooks/useQueries";
+import type { TaskInstance } from "../utils/taskInstances";
+import { expandAllTaskInstances } from "../utils/taskInstances";
 
 function getTodayString(): string {
   const d = new Date();
@@ -150,6 +153,19 @@ const CSV_HEADERS = [
 
 const COMPLETED_CSV_HEADERS = [...CSV_HEADERS, "Completed Date"];
 
+const ALL_ASSIGNEES_CSV_HEADERS = [
+  "Employee",
+  "Task ID",
+  "Title",
+  "Description",
+  "Target Date",
+  "Priority",
+  "Status",
+  "Frequency",
+  "Department",
+  "Completed Date",
+];
+
 function EmployeeTaskView({
   entry,
   onBack,
@@ -161,9 +177,18 @@ function EmployeeTaskView({
   const { data: tasks = [], isLoading } = useTasksByEmployee(principalText);
   const { data: completionDates = new Map<number, bigint>() } =
     useCompletionDates();
+  const { data: instanceCompletions = new Map<string, bigint>() } =
+    useTaskInstanceCompletions();
   const today = getTodayString();
   const todayTasks = tasks.filter((t) => t.targetDate === today);
   const employeeName = entry.profile.name || principalText;
+
+  // For daily tasks, expand instances for the task view
+  const { pendingInstances, doneInstances } = expandAllTaskInstances(
+    tasks,
+    instanceCompletions,
+  );
+  const allInstances = [...pendingInstances, ...doneInstances];
 
   function handleExportAll() {
     downloadCSV(
@@ -259,23 +284,23 @@ function EmployeeTaskView({
         </CardContent>
       </Card>
 
-      {/* All Tasks */}
+      {/* All Tasks (instance-expanded) */}
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base">
-            All Assigned Tasks
+            All Task Instances
             <Badge variant="secondary" className="ml-2">
-              {tasks.length}
+              {allInstances.length}
             </Badge>
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {tasks.length === 0 ? (
+          {allInstances.length === 0 ? (
             <p className="text-sm text-muted-foreground py-4 text-center">
               No tasks assigned.
             </p>
           ) : (
-            <TaskTable tasks={tasks} completionDates={completionDates} />
+            <InstanceTable instances={allInstances} />
           )}
         </CardContent>
       </Card>
@@ -348,6 +373,72 @@ function TaskTable({
   );
 }
 
+function InstanceTable({ instances }: { instances: TaskInstance[] }) {
+  return (
+    <div className="overflow-x-auto">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Title</TableHead>
+            <TableHead>Target Date</TableHead>
+            <TableHead>Priority</TableHead>
+            <TableHead>Status</TableHead>
+            <TableHead>Frequency</TableHead>
+            <TableHead>Department</TableHead>
+            <TableHead>Completed At</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {instances.map((inst) => {
+            const completedAt =
+              inst.completedAt !== undefined
+                ? new Date(
+                    Number(inst.completedAt / 1_000_000n),
+                  ).toLocaleString()
+                : "-";
+            const [y, m, d] = inst.targetDate.split("-");
+            return (
+              <TableRow key={inst.instanceKey}>
+                <TableCell className="font-medium">{inst.task.title}</TableCell>
+                <TableCell>
+                  {d}-{m}-{y}
+                </TableCell>
+                <TableCell>
+                  <Badge
+                    variant={
+                      inst.task.priority === Priority.high
+                        ? "destructive"
+                        : inst.task.priority === Priority.medium
+                          ? "secondary"
+                          : "outline"
+                    }
+                  >
+                    {priorityLabel(inst.task.priority)}
+                  </Badge>
+                </TableCell>
+                <TableCell>
+                  <Badge variant={inst.isDone ? "default" : "outline"}>
+                    {inst.isDone ? "Done" : "Pending"}
+                  </Badge>
+                </TableCell>
+                <TableCell className="text-xs text-muted-foreground">
+                  {frequencyLabel(inst.task)}
+                </TableCell>
+                <TableCell className="text-xs text-muted-foreground">
+                  {inst.task.department || "-"}
+                </TableCell>
+                <TableCell className="text-xs text-muted-foreground">
+                  {completedAt}
+                </TableCell>
+              </TableRow>
+            );
+          })}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
+
 function ExportAllEmployeesCompletedButton({
   profiles,
 }: {
@@ -356,6 +447,8 @@ function ExportAllEmployeesCompletedButton({
   const { data: allTasks = [] } = useAllTasks();
   const { data: completionDates = new Map<number, bigint>() } =
     useCompletionDates();
+  const { data: instanceCompletions = new Map<string, bigint>() } =
+    useTaskInstanceCompletions();
 
   function handleExportAllCompleted() {
     const nameMap = new Map<string, string>();
@@ -370,12 +463,13 @@ function ExportAllEmployeesCompletedButton({
     for (const entry of profiles) {
       const principalText = entry.principal.toText();
       const employeeName = nameMap.get(principalText) ?? principalText;
-      const employeeDoneTasks = allTasks.filter(
-        (t) =>
-          t.assignee.toText() === principalText && t.status === TaskStatus.done,
+      const employeeTasks = allTasks.filter(
+        (t) => t.assignee.toText() === principalText,
+      );
+      const employeeDoneTasks = employeeTasks.filter(
+        (t) => t.status === TaskStatus.done,
       );
       if (employeeDoneTasks.length === 0) continue;
-      // Separator row: enough columns to match COMPLETED_CSV_HEADERS length (11)
       rows.push([
         `--- ${employeeName} ---`,
         "",
@@ -398,9 +492,7 @@ function ExportAllEmployeesCompletedButton({
       }
     }
 
-    if (rows.length === 0) {
-      return;
-    }
+    if (rows.length === 0) return;
 
     downloadCSV(
       "all_employees_completed_tasks.csv",
@@ -409,17 +501,94 @@ function ExportAllEmployeesCompletedButton({
     );
   }
 
+  function handleExportAllAssignees() {
+    const nameMap = new Map<string, string>();
+    for (const entry of profiles) {
+      nameMap.set(
+        entry.principal.toText(),
+        entry.profile.name || entry.principal.toText(),
+      );
+    }
+
+    const rows: string[][] = [];
+
+    for (const entry of profiles) {
+      const principalText = entry.principal.toText();
+      const employeeName = nameMap.get(principalText) ?? principalText;
+      const employeeTasks = allTasks.filter(
+        (t) => t.assignee.toText() === principalText,
+      );
+      if (employeeTasks.length === 0) continue;
+
+      const { pendingInstances, doneInstances } = expandAllTaskInstances(
+        employeeTasks,
+        instanceCompletions,
+      );
+      const allInsts = [...pendingInstances, ...doneInstances];
+      if (allInsts.length === 0) continue;
+
+      // Separator row
+      rows.push([
+        `--- ${employeeName} ---`,
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+      ]);
+
+      for (const inst of allInsts) {
+        const completedDateStr =
+          inst.completedAt !== undefined
+            ? new Date(Number(inst.completedAt / 1_000_000n)).toLocaleString()
+            : "";
+        rows.push([
+          employeeName,
+          String(inst.task.id),
+          inst.task.title,
+          inst.task.description,
+          inst.targetDate,
+          priorityLabel(inst.task.priority),
+          inst.isDone ? "Done" : "Pending",
+          frequencyLabel(inst.task),
+          inst.task.department || "-",
+          completedDateStr,
+        ]);
+      }
+    }
+
+    if (rows.length === 0) return;
+
+    downloadCSV("all_assignees_all_tasks.csv", rows, ALL_ASSIGNEES_CSV_HEADERS);
+  }
+
   return (
-    <Button
-      variant="default"
-      size="sm"
-      onClick={handleExportAllCompleted}
-      className="gap-1.5"
-      data-ocid="employee_panel.export_all_completed.button"
-    >
-      <Download size={14} />
-      Export All Employees Completed (CSV)
-    </Button>
+    <div className="flex gap-2 flex-wrap">
+      <Button
+        variant="default"
+        size="sm"
+        onClick={handleExportAllCompleted}
+        className="gap-1.5"
+        data-ocid="employee_panel.export_all_completed.button"
+      >
+        <Download size={14} />
+        Export All Completed (CSV)
+      </Button>
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={handleExportAllAssignees}
+        className="gap-1.5"
+        data-ocid="employee_panel.export_all_assignees.button"
+      >
+        <Download size={14} />
+        Export All Assignees Pending &amp; Complete (CSV)
+      </Button>
+    </div>
   );
 }
 

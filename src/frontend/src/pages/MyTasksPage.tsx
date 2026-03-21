@@ -1,120 +1,42 @@
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ListTodo } from "lucide-react";
+import { CheckCircle2, Circle, ListTodo } from "lucide-react";
 import { toast } from "sonner";
 import { FrequencyType, Priority, TaskStatus } from "../backend.d";
-import type { Task } from "../backend.d";
 import {
-  useCompletionDates,
+  useMarkTaskInstanceDone,
   useMyTasks,
+  useTaskInstanceCompletions,
+  useUnmarkTaskInstanceDone,
   useUpdateTaskStatus,
 } from "../hooks/useQueries";
+import type { TaskInstance } from "../utils/taskInstances";
+import { expandAllTaskInstances } from "../utils/taskInstances";
 
 function todayStr(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-function getNextWeeklyDate(frequencyDays: string): string {
-  const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-  const days = frequencyDays.split(",").map((d) => d.trim());
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const todayIdx = today.getDay();
-  let minDiff = 7;
-  for (const day of days) {
-    const idx = dayNames.indexOf(day);
-    if (idx === -1) continue;
-    let diff = idx - todayIdx;
-    if (diff < 0) diff += 7;
-    if (diff < minDiff) minDiff = diff;
-  }
-  const result = new Date(today);
-  result.setDate(today.getDate() + minDiff);
-  return result.toISOString().slice(0, 10);
+function formatDate(dateStr: string): string {
+  const [y, m, d] = dateStr.split("-");
+  return `${d}-${m}-${y}`;
 }
 
-export function getEffectiveTargetDate(task: Task): string {
-  const freq = task.frequency as FrequencyType;
-  if (freq === FrequencyType.daily) return todayStr();
-  if (freq === FrequencyType.weekly && task.frequencyDays) {
-    return getNextWeeklyDate(task.frequencyDays);
-  }
-  if (freq === FrequencyType.monthly && task.frequencyDays) {
-    const dayOfMonth = Number(task.frequencyDays.trim());
-    const now = new Date();
-    const target = new Date(now.getFullYear(), now.getMonth(), dayOfMonth);
-    if (target < now) target.setMonth(target.getMonth() + 1);
-    return target.toISOString().slice(0, 10);
-  }
-  return task.targetDate;
-}
-
-export function getEffectiveStatus(
-  task: Task,
-  completionDates: Map<number, bigint>,
-): TaskStatus {
-  const freq = task.frequency as FrequencyType;
-  if (freq === FrequencyType.none) return task.status;
-  if (task.status !== TaskStatus.done) return task.status;
-  const ts = completionDates.get(Number(task.id));
-  if (!ts) return task.status;
-  const completedDate = new Date(Number(ts / 1_000_000n))
-    .toISOString()
-    .slice(0, 10);
-  const effectiveDate = getEffectiveTargetDate(task);
-  if (completedDate < effectiveDate) return TaskStatus.todo;
-  return task.status;
-}
-
-function isTaskActiveToday(
-  task: Task,
-  completionDates: Map<number, bigint>,
-): boolean {
-  const effectiveStatus = getEffectiveStatus(task, completionDates);
-  // If pending, always show as active today (carry-forward)
-  if (
-    effectiveStatus === TaskStatus.todo ||
-    effectiveStatus === TaskStatus.inProgress
-  ) {
-    return true;
-  }
-  // If done, only show as active if it's scheduled today
-  const freq = task.frequency as FrequencyType;
-  if (freq === FrequencyType.none) return true;
-  if (freq === FrequencyType.daily) return true;
-  const now = new Date();
-  if (freq === FrequencyType.weekly) {
-    const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-    const todayName = dayNames[now.getDay()];
-    const days = task.frequencyDays.split(",").map((d) => d.trim());
-    return days.includes(todayName);
-  }
-  if (freq === FrequencyType.monthly) {
-    return String(now.getDate()) === task.frequencyDays.trim();
-  }
-  return true;
-}
-
-function frequencyLabel(task: Task): string {
-  const freq = task.frequency as FrequencyType;
-  switch (freq) {
-    case FrequencyType.daily:
-      return "Daily";
-    case FrequencyType.weekly:
-      return `Weekly: ${task.frequencyDays}`;
-    case FrequencyType.monthly:
-      return `Monthly: day ${task.frequencyDays}`;
-    default:
-      return "";
-  }
+function FrequencyBadge({ freq, days }: { freq: FrequencyType; days: string }) {
+  if (freq === FrequencyType.none) return null;
+  const label =
+    freq === FrequencyType.daily
+      ? "Daily"
+      : freq === FrequencyType.weekly
+        ? `Weekly: ${days}`
+        : `Monthly: day ${days}`;
+  return (
+    <Badge variant="outline" className="text-xs">
+      {label}
+    </Badge>
+  );
 }
 
 function PriorityBadge({ priority }: { priority: Priority }) {
@@ -136,82 +58,122 @@ function PriorityBadge({ priority }: { priority: Priority }) {
   return <Badge className={`${className} text-xs font-medium`}>{label}</Badge>;
 }
 
-function StatusBadge({ status }: { status: TaskStatus }) {
-  const map: Record<TaskStatus, { label: string; className: string }> = {
-    [TaskStatus.todo]: {
-      label: "Todo",
-      className: "bg-muted text-muted-foreground border-0",
-    },
-    [TaskStatus.inProgress]: {
-      label: "In Progress",
-      className: "bg-blue-100 text-blue-700 border-0",
-    },
-    [TaskStatus.done]: {
-      label: "Done",
-      className: "bg-green-100 text-green-700 border-0",
-    },
-  };
-  const { label, className } = map[status];
-  return <Badge className={`${className} text-xs font-medium`}>{label}</Badge>;
-}
-
-function TaskCard({
-  task,
+function TaskInstanceCard({
+  instance,
   index,
-  completionDates,
 }: {
-  task: Task;
+  instance: TaskInstance;
   index: number;
-  completionDates: Map<number, bigint>;
 }) {
+  const { task, targetDate, isDone, completedAt } = instance;
+  const freq = task.frequency as FrequencyType;
+  const isDaily = freq === FrequencyType.daily;
+  const isOverdue = !isDone && targetDate < todayStr();
+
+  const markDone = useMarkTaskInstanceDone();
+  const unmarkDone = useUnmarkTaskInstanceDone();
   const updateStatus = useUpdateTaskStatus();
-  const freqLabel = frequencyLabel(task);
-  const effectiveDate = getEffectiveTargetDate(task);
-  const effectiveStatus = getEffectiveStatus(task, completionDates);
 
-  const isOverdue =
-    (effectiveStatus === TaskStatus.todo ||
-      effectiveStatus === TaskStatus.inProgress) &&
-    task.targetDate < todayStr();
+  const isPending =
+    markDone.isPending || unmarkDone.isPending || updateStatus.isPending;
 
-  function handleStatusChange(val: string) {
-    updateStatus.mutate(
-      { taskId: task.id, status: val as TaskStatus },
-      {
-        onSuccess: () => toast.success("Task status updated"),
-        onError: () => toast.error("Failed to update status"),
-      },
-    );
+  function handleToggle() {
+    if (isDaily) {
+      if (isDone) {
+        unmarkDone.mutate(
+          { taskId: task.id, targetDate },
+          {
+            onSuccess: () => toast.success("Marked as pending"),
+            onError: () => toast.error("Failed to update"),
+          },
+        );
+      } else {
+        markDone.mutate(
+          { taskId: task.id, targetDate },
+          {
+            onSuccess: () => toast.success("Marked as done"),
+            onError: () => toast.error("Failed to update"),
+          },
+        );
+      }
+    } else {
+      const newStatus = isDone ? TaskStatus.todo : TaskStatus.done;
+      updateStatus.mutate(
+        { taskId: task.id, status: newStatus },
+        {
+          onSuccess: () =>
+            toast.success(isDone ? "Marked as pending" : "Marked as done"),
+          onError: () => toast.error("Failed to update"),
+        },
+      );
+    }
   }
 
   return (
     <Card
-      className="shadow-card hover:shadow-card-hover transition-shadow"
+      className={`shadow-card hover:shadow-card-hover transition-shadow ${
+        isDone ? "opacity-70" : ""
+      }`}
       data-ocid={`tasks.item.${index + 1}`}
     >
-      <CardContent className="p-5">
-        <div className="flex flex-col sm:flex-row sm:items-start gap-3">
+      <CardContent className="p-4">
+        <div className="flex items-start gap-3">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="mt-0.5 h-7 w-7 shrink-0"
+            onClick={handleToggle}
+            disabled={isPending}
+            data-ocid={`tasks.toggle.${index + 1}`}
+          >
+            {isDone ? (
+              <CheckCircle2 size={18} className="text-green-500" />
+            ) : (
+              <Circle size={18} className="text-muted-foreground" />
+            )}
+          </Button>
+
           <div className="flex-1 min-w-0">
-            <h3 className="font-semibold text-sm mb-1">{task.title}</h3>
-            <p className="text-xs text-muted-foreground line-clamp-2 mb-3">
-              {task.description}
-            </p>
-            <div className="flex items-center gap-2 flex-wrap">
-              <PriorityBadge priority={task.priority} />
-              <StatusBadge status={effectiveStatus} />
-              <span className="text-xs text-muted-foreground">
-                Target: {effectiveDate}
+            <div className="flex items-start justify-between gap-2">
+              <h3
+                className={`font-semibold text-sm ${
+                  isDone ? "line-through text-muted-foreground" : ""
+                }`}
+              >
+                {task.title}
+              </h3>
+              <span className="text-xs text-muted-foreground shrink-0 tabular-nums">
+                {formatDate(targetDate)}
               </span>
+            </div>
+
+            {task.description && (
+              <p className="text-xs text-muted-foreground line-clamp-1 mt-0.5">
+                {task.description}
+              </p>
+            )}
+
+            <div className="flex items-center gap-1.5 flex-wrap mt-2">
+              <PriorityBadge priority={task.priority} />
+
+              {isDone ? (
+                <Badge className="bg-green-100 text-green-700 border-0 text-xs">
+                  Done
+                </Badge>
+              ) : (
+                <Badge className="bg-muted text-muted-foreground border-0 text-xs">
+                  Pending
+                </Badge>
+              )}
+
               {isOverdue && (
                 <Badge className="bg-red-100 text-red-700 border-0 text-xs">
                   Overdue
                 </Badge>
               )}
-              {freqLabel && (
-                <Badge variant="outline" className="text-xs">
-                  {freqLabel}
-                </Badge>
-              )}
+
+              <FrequencyBadge freq={freq} days={task.frequencyDays} />
+
               {task.department && (
                 <Badge
                   variant="outline"
@@ -220,28 +182,14 @@ function TaskCard({
                   {task.department}
                 </Badge>
               )}
+
+              {isDone && completedAt && (
+                <span className="text-xs text-muted-foreground">
+                  Completed:{" "}
+                  {new Date(Number(completedAt / 1_000_000n)).toLocaleString()}
+                </span>
+              )}
             </div>
-          </div>
-          <div className="sm:w-40 flex-shrink-0">
-            <Select
-              value={effectiveStatus}
-              onValueChange={handleStatusChange}
-              disabled={updateStatus.isPending}
-            >
-              <SelectTrigger
-                className="h-8 text-xs"
-                data-ocid={`tasks.status.select.${index + 1}`}
-              >
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={TaskStatus.todo}>Todo</SelectItem>
-                <SelectItem value={TaskStatus.inProgress}>
-                  In Progress
-                </SelectItem>
-                <SelectItem value={TaskStatus.done}>Done</SelectItem>
-              </SelectContent>
-            </Select>
           </div>
         </div>
       </CardContent>
@@ -249,16 +197,53 @@ function TaskCard({
   );
 }
 
-export default function MyTasksPage() {
-  const { data: tasks, isLoading } = useMyTasks();
-  const { data: completionDates = new Map<number, bigint>() } =
-    useCompletionDates();
+export function getEffectiveTargetDate(task: {
+  frequency: FrequencyType;
+  targetDate: string;
+  frequencyDays: string;
+}): string {
+  const freq = task.frequency as FrequencyType;
+  if (freq === FrequencyType.daily) return todayStr();
+  if (freq === FrequencyType.weekly && task.frequencyDays) {
+    const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    const days = task.frequencyDays.split(",").map((d) => d.trim());
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayIdx = today.getDay();
+    let minDiff = 7;
+    for (const day of days) {
+      const idx = dayNames.indexOf(day);
+      if (idx === -1) continue;
+      let diff = idx - todayIdx;
+      if (diff < 0) diff += 7;
+      if (diff < minDiff) minDiff = diff;
+    }
+    const result = new Date(today);
+    result.setDate(today.getDate() + minDiff);
+    return result.toISOString().slice(0, 10);
+  }
+  if (freq === FrequencyType.monthly && task.frequencyDays) {
+    const dayOfMonth = Number(task.frequencyDays.trim());
+    const now = new Date();
+    const target = new Date(now.getFullYear(), now.getMonth(), dayOfMonth);
+    if (target < now) target.setMonth(target.getMonth() + 1);
+    return target.toISOString().slice(0, 10);
+  }
+  return task.targetDate;
+}
 
-  const activeTasks = (tasks ?? []).filter((t) =>
-    isTaskActiveToday(t, completionDates),
-  );
-  const inactiveTasks = (tasks ?? []).filter(
-    (t) => !isTaskActiveToday(t, completionDates),
+export default function MyTasksPage() {
+  const { data: tasks, isLoading: tasksLoading } = useMyTasks();
+  const {
+    data: instanceCompletions = new Map<string, bigint>(),
+    isLoading: completionsLoading,
+  } = useTaskInstanceCompletions();
+
+  const isLoading = tasksLoading || completionsLoading;
+
+  const { pendingInstances, doneInstances } = expandAllTaskInstances(
+    tasks ?? [],
+    instanceCompletions,
   );
 
   return (
@@ -276,7 +261,7 @@ export default function MyTasksPage() {
       {isLoading ? (
         <div className="space-y-3" data-ocid="tasks.loading_state">
           {[1, 2, 3].map((i) => (
-            <Skeleton key={i} className="h-32 w-full rounded-lg" />
+            <Skeleton key={i} className="h-20 w-full rounded-lg" />
           ))}
         </div>
       ) : !tasks || tasks.length === 0 ? (
@@ -298,35 +283,37 @@ export default function MyTasksPage() {
         <div className="space-y-6">
           <div className="space-y-3">
             <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
-              Pending Tasks ({activeTasks.length})
+              Pending Tasks ({pendingInstances.length})
             </h2>
-            {activeTasks.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                No pending tasks. Great work!
-              </p>
+            {pendingInstances.length === 0 ? (
+              <Card className="shadow-card">
+                <CardContent className="py-8 text-center">
+                  <p className="text-sm text-muted-foreground">
+                    All caught up! No pending tasks.
+                  </p>
+                </CardContent>
+              </Card>
             ) : (
-              activeTasks.map((task, i) => (
-                <TaskCard
-                  key={task.id.toString()}
-                  task={task}
+              pendingInstances.map((inst, i) => (
+                <TaskInstanceCard
+                  key={inst.instanceKey}
+                  instance={inst}
                   index={i}
-                  completionDates={completionDates}
                 />
               ))
             )}
           </div>
 
-          {inactiveTasks.length > 0 && (
+          {doneInstances.length > 0 && (
             <div className="space-y-3">
               <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
-                Completed / Not Due Today ({inactiveTasks.length})
+                Completed ({doneInstances.length})
               </h2>
-              {inactiveTasks.map((task, i) => (
-                <TaskCard
-                  key={task.id.toString()}
-                  task={task}
-                  index={activeTasks.length + i}
-                  completionDates={completionDates}
+              {doneInstances.map((inst, i) => (
+                <TaskInstanceCard
+                  key={inst.instanceKey}
+                  instance={inst}
+                  index={pendingInstances.length + i}
                 />
               ))}
             </div>

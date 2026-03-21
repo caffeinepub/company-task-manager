@@ -73,7 +73,6 @@ export function useDashboardStats(isAdmin: boolean) {
     queryFn: async () => {
       if (!actor) return { todo: 0n, inProgress: 0n, done: 0n };
       const result = await (actor as any).countTasksByStatus();
-      // Handle both tuple [bigint,bigint,bigint] and object {todo,inProgress,done}
       if (Array.isArray(result)) {
         return {
           todo: result[0] as bigint,
@@ -167,6 +166,57 @@ export function useAdminCount() {
       return Number(count);
     },
     enabled: !!actor && !isFetching,
+  });
+}
+
+export function useTaskInstanceCompletions() {
+  const { actor, isFetching } = useActor();
+  return useQuery<Map<string, bigint>>({
+    queryKey: ["taskInstanceCompletions"],
+    queryFn: async () => {
+      if (!actor) return new Map<string, bigint>();
+      const entries = await actor.getTaskInstanceCompletions();
+      return new Map(entries.map(([k, v]) => [k, v]));
+    },
+    enabled: !!actor && !isFetching,
+  });
+}
+
+export function useMarkTaskInstanceDone() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      taskId,
+      targetDate,
+    }: { taskId: bigint; targetDate: string }) => {
+      if (!actor) throw new Error("No actor");
+      return actor.markTaskInstanceDone(taskId, targetDate);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["taskInstanceCompletions"] });
+      queryClient.invalidateQueries({ queryKey: ["myTasks"] });
+      queryClient.invalidateQueries({ queryKey: ["allTasks"] });
+    },
+  });
+}
+
+export function useUnmarkTaskInstanceDone() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      taskId,
+      targetDate,
+    }: { taskId: bigint; targetDate: string }) => {
+      if (!actor) throw new Error("No actor");
+      return actor.unmarkTaskInstanceDone(taskId, targetDate);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["taskInstanceCompletions"] });
+      queryClient.invalidateQueries({ queryKey: ["myTasks"] });
+      queryClient.invalidateQueries({ queryKey: ["allTasks"] });
+    },
   });
 }
 

@@ -1,30 +1,34 @@
 # Company Task Manager
 
 ## Current State
-- Dashboard shows 3 stat cards: Todo, In Progress, Done
-- My Tasks hides pending frequency tasks on days they're not scheduled
-- Daily tasks always show today's date regardless of overdue status
-- Pending tasks can disappear from view if not scheduled for today
+The app has daily/weekly/monthly recurring tasks. Daily tasks show today's date as target date and reset to "todo" if completed on a prior day. However, missed daily tasks do NOT generate multiple instances - each daily task is a single record, so there's no way to show "Task A (target: yesterday)" AND "Task A (target: today)" as separate pending items. Backend tracks completions per taskId only (one completion timestamp per task).
+
+Employee Panel has Export All Employees Completed CSV but no combined pending+complete CSV.
 
 ## Requested Changes (Diff)
 
 ### Add
-- Overdue indicator on pending frequency tasks showing original missed date
-- Pending tasks always appear in Active Today regardless of scheduled day
+- Backend: `taskInstanceCompletions` stable map keyed by `"taskId_YYYY-MM-DD"` storing completion timestamp (Int)
+- Backend: `markTaskInstanceDone(taskId, targetDate)` - marks specific (task, date) instance as done
+- Backend: `unmarkTaskInstanceDone(taskId, targetDate)` - un-marks a specific instance
+- Backend: `getTaskInstanceCompletions()` - returns all completed instance keys and timestamps
+- Frontend: Daily task rollover logic - generate one virtual instance per calendar day from task creation date to today for each daily task
+- Frontend: Each instance shown separately with Task Name + Target Date + Status in My Tasks and Dashboard
+- Frontend: Pending count = count of all undone daily instances + other pending tasks
+- Frontend: Mark instance done marks that specific (taskId, targetDate) pair
+- Frontend: New "Export All Assignees Pending & Complete (CSV)" button in Employee Panel
 
 ### Modify
-- Dashboard: Replace 3 stats (Todo, In Progress, Done) with 2 stats (Pending = todo+inProgress, Completed = done)
-- Dashboard: Recent Tasks section shows only pending tasks (todo + inProgress)
-- My Tasks: All pending (todo/inProgress) frequency tasks are always shown in Active Today section, never hidden in Not Scheduled Today
-- My Tasks: Pending daily tasks that were not completed show today as target date (they carry forward)
-- My Tasks / Dashboard: getEffectiveTargetDate returns today for daily pending tasks so they always appear due
+- My Tasks page: daily tasks now render as multiple date-specific instances
+- Dashboard: pending count and task list reflect daily task instances
+- Employee Panel: assignee task view shows instances; new CSV export button
 
 ### Remove
-- Nothing removed from backend
+- Nothing removed; backward compatible
 
 ## Implementation Plan
-1. Update DashboardPage: Replace 3 stat cards with 2 (Pending, Completed)
-2. Update DashboardPage: Filter recentTasks to show only pending tasks
-3. Update MyTasksPage: isTaskActiveToday returns true for any pending (todo/inProgress) frequency task
-4. Update MyTasksPage: getEffectiveTargetDate for daily tasks - show today always (carry forward); add overdue badge if task was created before today
-5. Update DashboardPage stats computation to use todo+inProgress as Pending count
+1. Update backend main.mo to add taskInstanceCompletions map and related query/update functions
+2. Regenerate backend.d.ts bindings
+3. Update frontend hooks (useQueries) to call new instance completion endpoints
+4. Rewrite daily task expansion logic in MyTasksPage and DashboardPage
+5. Add new combined CSV export to EmployeePanelPage

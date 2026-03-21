@@ -19,18 +19,24 @@ export interface Task {
     id: bigint;
     status: TaskStatus;
     assignee: Principal;
+    frequencyDays: string;
     title: string;
     createdAt: bigint;
     description: string;
     targetDate: string;
     priority: Priority;
     frequency: FrequencyType;
-    frequencyDays: string;
     department: string;
 }
 export interface UserProfile {
     name: string;
     email: string;
+}
+export enum FrequencyType {
+    none = "none",
+    monthly = "monthly",
+    daily = "daily",
+    weekly = "weekly"
 }
 export enum Priority {
     low = "low",
@@ -47,12 +53,6 @@ export enum UserRole {
     user = "user",
     guest = "guest"
 }
-export enum FrequencyType {
-    none = "none",
-    daily = "daily",
-    weekly = "weekly",
-    monthly = "monthly"
-}
 export interface backendInterface {
     assignCallerUserRole(user: Principal, role: UserRole): Promise<void>;
     assignUserRoleAsAdmin(user: Principal, role: UserRole): Promise<void>;
@@ -68,10 +68,13 @@ export interface backendInterface {
     getCompletionDates(): Promise<Array<CompletionDate>>;
     getMyTasks(): Promise<Array<Task>>;
     getTask(taskId: bigint): Promise<Task | null>;
+    getTaskInstanceCompletions(): Promise<Array<[string, bigint]>>;
     getTasksByEmployee(employee: Principal): Promise<Array<Task>>;
     getUserProfile(userPrincipal: Principal): Promise<UserProfile | null>;
     hasAnyAdmin(): Promise<boolean>;
     isCallerAdmin(): Promise<boolean>;
+    markTaskInstanceDone(taskId: bigint, targetDate: string): Promise<void>;
     saveCallerUserProfile(profile: UserProfile): Promise<void>;
+    unmarkTaskInstanceDone(taskId: bigint, targetDate: string): Promise<void>;
     updateTaskStatus(taskId: bigint, newStatus: TaskStatus): Promise<void>;
 }

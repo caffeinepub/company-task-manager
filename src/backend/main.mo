@@ -1,11 +1,16 @@
 import Map "mo:core/Map";
 import Principal "mo:core/Principal";
+import Text "mo:core/Text";
+import Int "mo:core/Int";
 import Time "mo:core/Time";
+import Iter "mo:core/Iter";
 import Runtime "mo:core/Runtime";
+import Migration "migration";
 
 import MixinAuthorization "authorization/MixinAuthorization";
 import AccessControl "authorization/access-control";
 
+(with migration = Migration.run)
 actor {
   stable let accessControlState = AccessControl.initState();
   include MixinAuthorization(accessControlState);
@@ -93,6 +98,7 @@ actor {
   stable var nextTaskId = 0;
   stable let userProfiles = Map.empty<Principal, UserProfile>();
   stable let taskCompletedAt = Map.empty<Nat, Int>();
+  stable let taskInstanceCompletions = Map.empty<Text, Int>();
 
   // Migrate legacy data on upgrade
   system func postupgrade() {
@@ -337,5 +343,65 @@ actor {
       };
     };
     (todoCount, inProgressCount, doneCount);
+  };
+
+  // New feature: Task instance completions for recurring tasks
+  public shared ({ caller }) func markTaskInstanceDone(taskId : Nat, targetDate : Text) : async () {
+    switch (tasksV3.get(taskId)) {
+      case (null) { Runtime.trap("Task not found") };
+      case (?task) {
+        if (task.assignee != caller and not AccessControl.isAdmin(accessControlState, caller)) {
+          Runtime.trap("Unauthorized: Only assignee or admin can mark as completed");
+        };
+        let key = taskId.toText() # "_" # targetDate;
+        taskInstanceCompletions.add(key, Time.now());
+      };
+    };
+  };
+
+  public shared ({ caller }) func unmarkTaskInstanceDone(taskId : Nat, targetDate : Text) : async () {
+    switch (tasksV3.get(taskId)) {
+      case (null) { Runtime.trap("Task not found") };
+      case (?task) {
+        if (task.assignee != caller and not AccessControl.isAdmin(accessControlState, caller)) {
+          Runtime.trap("Unauthorized: Only assignee or admin can unmark completion");
+        };
+        let key = taskId.toText() # "_" # targetDate;
+        taskInstanceCompletions.remove(key);
+      };
+    };
+  };
+
+  public query ({ caller }) func getTaskInstanceCompletions() : async [(Text, Int)] {
+    if (caller.isAnonymous()) {
+      Runtime.trap("Unauthorized: must be logged in");
+    };
+    
+    let isAdminCaller = AccessControl.isAdmin(accessControlState, caller);
+    
+    // Admins see all completions
+    if (isAdminCaller) {
+      return taskInstanceCompletions.entries().toArray();
+    };
+    
+    // Regular users see only completions for their assigned tasks
+    taskInstanceCompletions.entries().filter(func((key, timestamp)) {
+      // Parse taskId from key format "taskId_YYYY-MM-DD"
+      let parts = key.split(#char '_');
+      switch (parts.next()) {
+        case (?taskIdText) {
+          switch (Nat.fromText(taskIdText)) {
+            case (?taskId) {
+              switch (tasksV3.get(taskId)) {
+                case (?task) { task.assignee == caller };
+                case (null) { false };
+              };
+            };
+            case (null) { false };
+          };
+        };
+        case (null) { false };
+      };
+    }).toArray();
   };
 };

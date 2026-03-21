@@ -4,40 +4,17 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Link } from "@tanstack/react-router";
 import { AlertCircle, CheckSquare, TrendingUp, Users } from "lucide-react";
 import { motion } from "motion/react";
-import { Priority, TaskStatus } from "../backend.d";
+import { Priority } from "../backend.d";
 import type { Task } from "../backend.d";
 import {
-  type DashboardStats,
   useAllTasks,
   useAllUserProfiles,
-  useDashboardStats,
   useIsAdmin,
   useMyTasks,
+  useTaskInstanceCompletions,
 } from "../hooks/useQueries";
-import { getEffectiveTargetDate } from "./MyTasksPage";
-
-function StatusBadge({ status }: { status: TaskStatus }) {
-  const map = {
-    [TaskStatus.todo]: {
-      label: "Todo",
-      className: "bg-muted text-muted-foreground",
-    },
-    [TaskStatus.inProgress]: {
-      label: "In Progress",
-      className: "bg-blue-100 text-blue-700",
-    },
-    [TaskStatus.done]: {
-      label: "Done",
-      className: "bg-green-100 text-green-700",
-    },
-  };
-  const { label, className } = map[status] ?? map[TaskStatus.todo];
-  return (
-    <Badge className={`${className} border-0 text-xs font-medium`}>
-      {label}
-    </Badge>
-  );
-}
+import type { TaskInstance } from "../utils/taskInstances";
+import { expandAllTaskInstances } from "../utils/taskInstances";
 
 function PriorityBadge({ priority }: { priority: Priority }) {
   const map = {
@@ -64,7 +41,7 @@ function StatCard({
   loading,
 }: {
   title: string;
-  value: bigint | number | undefined;
+  value: number;
   icon: React.ReactNode;
   color: string;
   loading: boolean;
@@ -78,9 +55,7 @@ function StatCard({
             {loading ? (
               <Skeleton className="h-8 w-16" />
             ) : (
-              <p className="text-3xl font-bold">
-                {value !== undefined ? value.toString() : "0"}
-              </p>
+              <p className="text-3xl font-bold">{value}</p>
             )}
           </div>
           <div
@@ -94,30 +69,33 @@ function StatCard({
   );
 }
 
-function TaskRow({ task, index }: { task: Task; index: number }) {
-  const effectiveDate = getEffectiveTargetDate(task);
+function InstanceRow({
+  instance,
+  index,
+}: { instance: TaskInstance; index: number }) {
+  const [y, m, d] = instance.targetDate.split("-");
+  const formattedDate = `${d}-${m}-${y}`;
   return (
     <div
       className="flex items-center gap-4 py-3 border-b last:border-0"
       data-ocid={`dashboard.task.item.${index + 1}`}
     >
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium truncate">{task.title}</p>
+        <p className="text-sm font-medium truncate">{instance.task.title}</p>
         <p className="text-xs text-muted-foreground mt-0.5">
-          Target Date: {effectiveDate}
+          Target: {formattedDate}
         </p>
       </div>
-      <PriorityBadge priority={task.priority} />
-      <StatusBadge status={task.status} />
+      <PriorityBadge priority={instance.task.priority} />
     </div>
   );
 }
 
 function AssigneeTaskList({
-  allTasks,
+  pendingInstances,
   loading,
 }: {
-  allTasks: Task[];
+  pendingInstances: TaskInstance[];
   loading: boolean;
 }) {
   const { data: userProfiles, isLoading: profilesLoading } =
@@ -128,15 +106,11 @@ function AssigneeTaskList({
     profileMap.set(entry.principal.toString(), entry.profile.name);
   }
 
-  const pendingTasks = allTasks.filter(
-    (t) => t.status === TaskStatus.todo || t.status === TaskStatus.inProgress,
-  );
-
-  const grouped = new Map<string, Task[]>();
-  for (const task of pendingTasks) {
-    const key = task.assignee.toString();
+  const grouped = new Map<string, TaskInstance[]>();
+  for (const inst of pendingInstances) {
+    const key = inst.task.assignee.toString();
     if (!grouped.has(key)) grouped.set(key, []);
-    grouped.get(key)!.push(task);
+    grouped.get(key)!.push(inst);
   }
 
   const entries = Array.from(grouped.entries()).sort((a, b) => {
@@ -155,7 +129,7 @@ function AssigneeTaskList({
           Assignee Task List
         </CardTitle>
         <p className="text-xs text-muted-foreground">
-          Pending &amp; In-Progress tasks grouped by assignee
+          Pending task instances grouped by assignee
         </p>
       </CardHeader>
       <CardContent>
@@ -171,14 +145,8 @@ function AssigneeTaskList({
           </div>
         ) : (
           <div className="space-y-4">
-            {entries.map(([principal, tasks], idx) => {
+            {entries.map(([principal, insts], idx) => {
               const name = profileMap.get(principal) ?? "Unknown Employee";
-              const todoCount = tasks.filter(
-                (t) => t.status === TaskStatus.todo,
-              ).length;
-              const inProgressCount = tasks.filter(
-                (t) => t.status === TaskStatus.inProgress,
-              ).length;
               return (
                 <motion.div
                   key={principal}
@@ -194,36 +162,30 @@ function AssigneeTaskList({
                       </div>
                       <span className="font-medium text-sm">{name}</span>
                     </div>
-                    <div className="flex gap-1">
-                      {todoCount > 0 && (
-                        <Badge className="bg-muted text-muted-foreground border-0 text-xs">
-                          {todoCount} Todo
-                        </Badge>
-                      )}
-                      {inProgressCount > 0 && (
-                        <Badge className="bg-blue-100 text-blue-700 border-0 text-xs">
-                          {inProgressCount} In Progress
-                        </Badge>
-                      )}
-                    </div>
+                    <Badge className="bg-amber-100 text-amber-700 border-0 text-xs">
+                      {insts.length} Pending
+                    </Badge>
                   </div>
                   <div className="space-y-1 pl-10">
-                    {tasks.slice(0, 4).map((task) => (
-                      <div
-                        key={task.id.toString()}
-                        className="flex items-center justify-between text-xs"
-                      >
-                        <span className="truncate text-foreground/80 flex-1 mr-2">
-                          {task.title}
-                        </span>
-                        <span className="text-muted-foreground shrink-0">
-                          {getEffectiveTargetDate(task)}
-                        </span>
-                      </div>
-                    ))}
-                    {tasks.length > 4 && (
+                    {insts.slice(0, 4).map((inst) => {
+                      const [y, m, d] = inst.targetDate.split("-");
+                      return (
+                        <div
+                          key={inst.instanceKey}
+                          className="flex items-center justify-between text-xs"
+                        >
+                          <span className="truncate text-foreground/80 flex-1 mr-2">
+                            {inst.task.title}
+                          </span>
+                          <span className="text-muted-foreground shrink-0">
+                            {d}-{m}-{y}
+                          </span>
+                        </div>
+                      );
+                    })}
+                    {insts.length > 4 && (
                       <p className="text-xs text-muted-foreground">
-                        +{tasks.length - 4} more tasks
+                        +{insts.length - 4} more
                       </p>
                     )}
                   </div>
@@ -239,26 +201,26 @@ function AssigneeTaskList({
 
 export default function DashboardPage() {
   const { data: isAdmin, isLoading: adminLoading } = useIsAdmin();
-  const { data: stats, isLoading: statsLoading } = useDashboardStats(!!isAdmin);
   const { data: myTasks, isLoading: myTasksLoading } = useMyTasks();
   const { data: allTasks, isLoading: allTasksLoading } = useAllTasks();
+  const {
+    data: instanceCompletions = new Map<string, bigint>(),
+    isLoading: completionsLoading,
+  } = useTaskInstanceCompletions();
 
   const sourceTaskList: Task[] = isAdmin ? (allTasks ?? []) : (myTasks ?? []);
-  const pendingTasks = sourceTaskList.filter(
-    (t) => t.status === TaskStatus.todo || t.status === TaskStatus.inProgress,
-  );
-  const recentTasks = pendingTasks.slice(0, 8);
-
   const tasksLoading = isAdmin ? allTasksLoading : myTasksLoading;
 
-  const defaultStats: DashboardStats = { todo: 0n, inProgress: 0n, done: 0n };
-  const {
-    todo: todoCount,
-    inProgress: inProgressCount,
-    done: doneCount,
-  } = stats ?? defaultStats;
+  const { pendingInstances, doneInstances } = expandAllTaskInstances(
+    sourceTaskList,
+    instanceCompletions,
+  );
 
-  const pendingCount = BigInt(todoCount) + BigInt(inProgressCount);
+  const pendingCount = pendingInstances.length;
+  const doneCount = doneInstances.length;
+  const recentPending = pendingInstances.slice(0, 8);
+
+  const statsLoading = tasksLoading || adminLoading || completionsLoading;
 
   return (
     <div className="max-w-5xl mx-auto space-y-6 animate-fade-up">
@@ -280,21 +242,21 @@ export default function DashboardPage() {
           value={pendingCount}
           icon={<AlertCircle size={18} className="text-amber-500" />}
           color="bg-amber-100"
-          loading={statsLoading || adminLoading}
+          loading={statsLoading}
         />
         <StatCard
           title="Completed Tasks"
           value={doneCount}
           icon={<CheckSquare size={18} className="text-green-500" />}
           color="bg-green-100"
-          loading={statsLoading || adminLoading}
+          loading={statsLoading}
         />
       </div>
 
       {isAdmin && (
         <AssigneeTaskList
-          allTasks={allTasks ?? []}
-          loading={allTasksLoading || adminLoading}
+          pendingInstances={pendingInstances}
+          loading={allTasksLoading || adminLoading || completionsLoading}
         />
       )}
 
@@ -315,13 +277,13 @@ export default function DashboardPage() {
           </div>
         </CardHeader>
         <CardContent>
-          {tasksLoading ? (
+          {statsLoading ? (
             <div className="space-y-3" data-ocid="dashboard.loading_state">
               {[1, 2, 3].map((i) => (
                 <Skeleton key={i} className="h-12 w-full" />
               ))}
             </div>
-          ) : recentTasks.length === 0 ? (
+          ) : recentPending.length === 0 ? (
             <div
               className="py-8 text-center text-sm text-muted-foreground"
               data-ocid="dashboard.empty_state"
@@ -338,14 +300,14 @@ export default function DashboardPage() {
             </div>
           ) : (
             <div>
-              {recentTasks.map((task, i) => (
+              {recentPending.map((inst, i) => (
                 <motion.div
-                  key={task.id.toString()}
+                  key={inst.instanceKey}
                   initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: i * 0.05 }}
                 >
-                  <TaskRow task={task} index={i} />
+                  <InstanceRow instance={inst} index={i} />
                 </motion.div>
               ))}
             </div>
