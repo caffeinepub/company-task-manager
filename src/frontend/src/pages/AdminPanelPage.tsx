@@ -41,8 +41,11 @@ export default function AdminPanelPage() {
     isLoading: isAdminLoading,
     refetch: refetchIsAdmin,
   } = useIsAdmin();
-  const { data: adminCount = 0, isLoading: isAdminCountLoading } =
-    useAdminCount();
+  const {
+    data: adminCount = 0,
+    isLoading: isAdminCountLoading,
+    refetch: refetchAdminCount,
+  } = useAdminCount();
   const assignRole = useAssignUserRoleAsAdmin();
   const bootstrapAdmin = useBootstrapAdmin();
   const { identity } = useInternetIdentity();
@@ -57,6 +60,9 @@ export default function AdminPanelPage() {
   const adminRoleSelected = role === UserRole.admin;
   const submitDisabled =
     assignRole.isPending || (adminRoleSelected && adminLimitReached);
+
+  // Show claim card when not admin OR when permanent admin store is empty
+  const showClaimCard = !isAdmin || adminCount === 0;
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -94,9 +100,10 @@ export default function AdminPanelPage() {
         if (result) {
           toast.success("You are now an Admin!");
           refetchIsAdmin();
+          refetchAdminCount();
         } else {
           toast.error(
-            "An admin already exists. Contact your admin to get access.",
+            "Could not claim admin. Contact your admin to get access.",
           );
         }
       },
@@ -106,7 +113,7 @@ export default function AdminPanelPage() {
     });
   }
 
-  if (isAdminLoading) {
+  if (isAdminLoading || isAdminCountLoading) {
     return (
       <div className="flex items-center justify-center py-20">
         <Loader2 size={24} className="animate-spin text-primary" />
@@ -114,23 +121,45 @@ export default function AdminPanelPage() {
     );
   }
 
-  if (!isAdmin) {
-    return (
-      <div className="max-w-xl mx-auto space-y-4 animate-fade-up">
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <ShieldCheck size={22} className="text-primary" />
-            Admin Panel
-          </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            You need Admin access to manage tasks and users.
-          </p>
+  return (
+    <div className="max-w-xl mx-auto animate-fade-up space-y-6">
+      <div className="mb-2">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold flex items-center gap-2">
+              <ShieldCheck size={22} className="text-primary" />
+              Admin Panel
+            </h1>
+            <p className="text-sm text-muted-foreground mt-1">
+              {isAdmin
+                ? "Manage user roles and permissions"
+                : "You need Admin access to manage tasks and users."}
+            </p>
+          </div>
+          <div className="flex items-center gap-2 mt-1">
+            <Users size={15} className="text-muted-foreground" />
+            <Badge
+              variant={adminLimitReached ? "destructive" : "secondary"}
+              className="text-xs font-semibold"
+              data-ocid="admin_panel.admin_count.badge"
+            >
+              Admins: {adminCount} / {maxAdmins}
+            </Badge>
+          </div>
         </div>
-        <Card className="shadow-card border-primary/20">
+      </div>
+
+      {/* Claim Admin Card — shown when not admin OR admin store is empty */}
+      {showClaimCard && (
+        <Card className="shadow-card border-primary/30">
           <CardHeader className="pb-3">
-            <CardTitle className="text-base">Claim Admin Access</CardTitle>
+            <CardTitle className="text-base flex items-center gap-2">
+              <ShieldCheck size={16} className="text-primary" />
+              Claim Admin Access
+            </CardTitle>
             <CardDescription>
-              Click below to become Admin (only works if no admin exists yet).
+              Click below to register as Admin. If admin count shows 0, you can
+              always reclaim your role here.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -159,144 +188,121 @@ export default function AdminPanelPage() {
                 </>
               )}
             </Button>
-            <p className="text-xs text-muted-foreground text-center">
-              If an admin already exists, ask them to assign your role using the
-              Principal ID above.
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
-  return (
-    <div className="max-w-xl mx-auto animate-fade-up">
-      <div className="mb-6">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold flex items-center gap-2">
-              <ShieldCheck size={22} className="text-primary" />
-              Admin Panel
-            </h1>
-            <p className="text-sm text-muted-foreground mt-1">
-              Manage user roles and permissions
-            </p>
-          </div>
-          <div className="flex items-center gap-2 mt-1">
-            <Users size={15} className="text-muted-foreground" />
-            {isAdminCountLoading ? (
-              <Loader2
-                size={13}
-                className="animate-spin text-muted-foreground"
-              />
-            ) : (
-              <Badge
-                variant={adminLimitReached ? "destructive" : "secondary"}
-                className="text-xs font-semibold"
-                data-ocid="admin_panel.admin_count.badge"
-              >
-                Admins: {adminCount} / {maxAdmins}
-              </Badge>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {adminLimitReached && (
-        <Alert
-          variant="destructive"
-          className="mb-4"
-          data-ocid="admin_panel.limit.error_state"
-        >
-          <AlertTriangle size={15} className="mr-1" />
-          <AlertDescription>
-            Maximum of {maxAdmins} admins reached. Remove an existing admin
-            before promoting a new one.
-          </AlertDescription>
-        </Alert>
-      )}
-
-      <Card className="shadow-card">
-        <CardHeader className="pb-4">
-          <CardTitle className="text-base flex items-center gap-2">
-            <UserCog size={16} className="text-primary" />
-            Assign User Role
-          </CardTitle>
-          <CardDescription>
-            Enter a user's principal ID and assign them a role.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="principal">
-                User Principal <span className="text-destructive">*</span>
-              </Label>
-              <Input
-                id="principal"
-                value={principal}
-                onChange={(e) => setPrincipal(e.target.value)}
-                placeholder="aaaaa-bbbbb-ccccc-ddddd-eee"
-                className="font-mono text-xs"
-                data-ocid="admin_panel.principal.input"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Role</Label>
-              <Select
-                value={role}
-                onValueChange={(v) => {
-                  setRole(v as UserRole);
-                  setError("");
-                }}
-              >
-                <SelectTrigger data-ocid="admin_panel.role.select">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={UserRole.guest}>Guest</SelectItem>
-                  <SelectItem value={UserRole.user}>User</SelectItem>
-                  <SelectItem value={UserRole.admin}>Admin</SelectItem>
-                </SelectContent>
-              </Select>
-              {adminRoleSelected && adminLimitReached && (
-                <p
-                  className="text-xs text-destructive flex items-center gap-1 mt-1"
-                  data-ocid="admin_panel.admin_limit.error_state"
-                >
-                  <AlertTriangle size={12} />
-                  Admin limit reached ({maxAdmins}/{maxAdmins}). Cannot assign
-                  Admin role.
-                </p>
-              )}
-            </div>
-            {error && (
-              <p
-                className="text-sm text-destructive"
-                data-ocid="admin_panel.error_state"
-              >
-                {error}
+            {isAdmin && adminCount === 0 && (
+              <p className="text-xs text-amber-600 dark:text-amber-400 text-center">
+                ⚠️ Admin store is empty. Click above to re-register as admin.
               </p>
             )}
-            <Button
-              type="submit"
-              disabled={submitDisabled}
-              data-ocid="admin_panel.assign.submit_button"
+            {!isAdmin && (
+              <p className="text-xs text-muted-foreground text-center">
+                If an admin already exists, ask them to assign your role using
+                the Principal ID above.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Role Assignment Card — shown only to confirmed admins */}
+      {isAdmin && adminCount > 0 && (
+        <>
+          {adminLimitReached && (
+            <Alert
+              variant="destructive"
+              className="mb-4"
+              data-ocid="admin_panel.limit.error_state"
             >
-              {assignRole.isPending ? (
-                <>
-                  <Loader2 size={14} className="mr-2 animate-spin" />{" "}
-                  Assigning...
-                </>
-              ) : (
-                <>
-                  <ShieldCheck size={14} className="mr-2" /> Assign Role
-                </>
-              )}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
+              <AlertTriangle size={15} className="mr-1" />
+              <AlertDescription>
+                Maximum of {maxAdmins} admins reached. Remove an existing admin
+                before promoting a new one.
+              </AlertDescription>
+            </Alert>
+          )}
+
+          <Card className="shadow-card">
+            <CardHeader className="pb-4">
+              <CardTitle className="text-base flex items-center gap-2">
+                <UserCog size={16} className="text-primary" />
+                Assign User Role
+              </CardTitle>
+              <CardDescription>
+                Enter a user's principal ID and assign them a role.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div className="space-y-1.5">
+                  <Label htmlFor="principal">
+                    User Principal <span className="text-destructive">*</span>
+                  </Label>
+                  <Input
+                    id="principal"
+                    value={principal}
+                    onChange={(e) => setPrincipal(e.target.value)}
+                    placeholder="aaaaa-bbbbb-ccccc-ddddd-eee"
+                    className="font-mono text-xs"
+                    data-ocid="admin_panel.principal.input"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Role</Label>
+                  <Select
+                    value={role}
+                    onValueChange={(v) => {
+                      setRole(v as UserRole);
+                      setError("");
+                    }}
+                  >
+                    <SelectTrigger data-ocid="admin_panel.role.select">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={UserRole.guest}>Guest</SelectItem>
+                      <SelectItem value={UserRole.user}>User</SelectItem>
+                      <SelectItem value={UserRole.admin}>Admin</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {adminRoleSelected && adminLimitReached && (
+                    <p
+                      className="text-xs text-destructive flex items-center gap-1 mt-1"
+                      data-ocid="admin_panel.admin_limit.error_state"
+                    >
+                      <AlertTriangle size={12} />
+                      Admin limit reached ({maxAdmins}/{maxAdmins}). Cannot
+                      assign Admin role.
+                    </p>
+                  )}
+                </div>
+                {error && (
+                  <p
+                    className="text-sm text-destructive"
+                    data-ocid="admin_panel.error_state"
+                  >
+                    {error}
+                  </p>
+                )}
+                <Button
+                  type="submit"
+                  disabled={submitDisabled}
+                  data-ocid="admin_panel.assign.submit_button"
+                >
+                  {assignRole.isPending ? (
+                    <>
+                      <Loader2 size={14} className="mr-2 animate-spin" />{" "}
+                      Assigning...
+                    </>
+                  ) : (
+                    <>
+                      <ShieldCheck size={14} className="mr-2" /> Assign Role
+                    </>
+                  )}
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
+        </>
+      )}
     </div>
   );
 }

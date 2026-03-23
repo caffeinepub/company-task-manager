@@ -1,11 +1,28 @@
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { Link } from "@tanstack/react-router";
-import { AlertCircle, CheckSquare, TrendingUp, Users } from "lucide-react";
+import {
+  AlertCircle,
+  Building2,
+  CheckSquare,
+  Layers,
+  PauseCircle,
+  TrendingUp,
+  Users,
+} from "lucide-react";
 import { motion } from "motion/react";
 import { Priority } from "../backend.d";
 import type { Task } from "../backend.d";
+import { usePausedTasks } from "../hooks/usePausedTasks";
 import {
   useAllTasks,
   useAllUserProfiles,
@@ -64,6 +81,186 @@ function StatCard({
             {icon}
           </div>
         </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function TotalTasksSection({
+  pendingCount,
+  pausedCount,
+  doneCount,
+  loading,
+}: {
+  pendingCount: number;
+  pausedCount: number;
+  doneCount: number;
+  loading: boolean;
+}) {
+  const total = pendingCount + pausedCount + doneCount;
+  const items = [
+    {
+      label: "Active",
+      value: pendingCount,
+      color: "text-amber-600",
+      bg: "bg-amber-50",
+    },
+    {
+      label: "Paused",
+      value: pausedCount,
+      color: "text-purple-600",
+      bg: "bg-purple-50",
+    },
+    {
+      label: "Completed",
+      value: doneCount,
+      color: "text-green-600",
+      bg: "bg-green-50",
+    },
+    {
+      label: "Total",
+      value: total,
+      color: "text-primary",
+      bg: "bg-primary/5",
+    },
+  ];
+
+  return (
+    <Card className="shadow-card">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base flex items-center gap-2">
+          <Layers size={16} className="text-primary" />
+          Total Tasks
+        </CardTitle>
+        <p className="text-xs text-muted-foreground">
+          Company-wide task summary
+        </p>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {items.map((item) => (
+            <div
+              key={item.label}
+              className={`rounded-lg p-3 ${item.bg} text-center`}
+            >
+              <p className="text-xs text-muted-foreground mb-1">{item.label}</p>
+              {loading ? (
+                <Skeleton className="h-7 w-10 mx-auto" />
+              ) : (
+                <p className={`text-2xl font-bold ${item.color}`}>
+                  {item.value}
+                </p>
+              )}
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function DepartmentSection({
+  pendingInstances,
+  doneInstances,
+  loading,
+}: {
+  pendingInstances: TaskInstance[];
+  doneInstances: TaskInstance[];
+  loading: boolean;
+}) {
+  // Group by department
+  const deptMap = new Map<string, { pending: number; completed: number }>();
+
+  const getDept = (inst: TaskInstance) =>
+    inst.task.department?.trim() || "No Department";
+
+  for (const inst of pendingInstances) {
+    const dept = getDept(inst);
+    const entry = deptMap.get(dept) ?? { pending: 0, completed: 0 };
+    entry.pending += 1;
+    deptMap.set(dept, entry);
+  }
+  for (const inst of doneInstances) {
+    const dept = getDept(inst);
+    const entry = deptMap.get(dept) ?? { pending: 0, completed: 0 };
+    entry.completed += 1;
+    deptMap.set(dept, entry);
+  }
+
+  const rows = Array.from(deptMap.entries())
+    .map(([dept, counts]) => ({
+      dept,
+      pending: counts.pending,
+      completed: counts.completed,
+      total: counts.pending + counts.completed,
+    }))
+    .sort((a, b) => b.total - a.total);
+
+  return (
+    <Card className="shadow-card">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base flex items-center gap-2">
+          <Building2 size={16} className="text-primary" />
+          Department Overview
+        </CardTitle>
+        <p className="text-xs text-muted-foreground">
+          Task distribution across departments
+        </p>
+      </CardHeader>
+      <CardContent className="p-0">
+        {loading ? (
+          <div
+            className="p-4 space-y-2"
+            data-ocid="dashboard.dept.loading_state"
+          >
+            {[1, 2, 3].map((i) => (
+              <Skeleton key={i} className="h-10 w-full" />
+            ))}
+          </div>
+        ) : rows.length === 0 ? (
+          <div
+            className="py-8 text-center text-sm text-muted-foreground"
+            data-ocid="dashboard.dept.empty_state"
+          >
+            No department data available.
+          </div>
+        ) : (
+          <Table data-ocid="dashboard.dept.table">
+            <TableHeader>
+              <TableRow>
+                <TableHead>Department</TableHead>
+                <TableHead className="text-right">Pending</TableHead>
+                <TableHead className="text-right">Completed</TableHead>
+                <TableHead className="text-right">Total</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.map((row, idx) => (
+                <TableRow
+                  key={row.dept}
+                  data-ocid={`dashboard.dept.row.${idx + 1}`}
+                >
+                  <TableCell className="font-medium text-sm">
+                    {row.dept}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Badge className="bg-amber-100 text-amber-700 border-0 text-xs">
+                      {row.pending}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Badge className="bg-green-100 text-green-700 border-0 text-xs">
+                      {row.completed}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-right text-sm font-medium">
+                    {row.total}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
       </CardContent>
     </Card>
   );
@@ -207,6 +404,7 @@ export default function DashboardPage() {
     data: instanceCompletions = new Map<string, bigint>(),
     isLoading: completionsLoading,
   } = useTaskInstanceCompletions();
+  const { pausedTaskIds } = usePausedTasks();
 
   const sourceTaskList: Task[] = isAdmin ? (allTasks ?? []) : (myTasks ?? []);
   const tasksLoading = isAdmin ? allTasksLoading : myTasksLoading;
@@ -214,7 +412,13 @@ export default function DashboardPage() {
   const { pendingInstances, doneInstances } = expandAllTaskInstances(
     sourceTaskList,
     instanceCompletions,
+    pausedTaskIds,
   );
+
+  // Count paused tasks that actually exist in allTasks
+  const pausedCount = isAdmin
+    ? (allTasks ?? []).filter((t) => pausedTaskIds.has(t.id.toString())).length
+    : 0;
 
   const pendingCount = pendingInstances.length;
   const doneCount = doneInstances.length;
@@ -232,6 +436,16 @@ export default function DashboardPage() {
             : "Your personal task overview"}
         </p>
       </div>
+
+      {/* Total Tasks section - admin only */}
+      {isAdmin && (
+        <TotalTasksSection
+          pendingCount={pendingCount}
+          pausedCount={pausedCount}
+          doneCount={doneCount}
+          loading={statsLoading}
+        />
+      )}
 
       <div
         className="grid grid-cols-1 sm:grid-cols-2 gap-4"
@@ -251,12 +465,30 @@ export default function DashboardPage() {
           color="bg-green-100"
           loading={statsLoading}
         />
+        {isAdmin && pausedCount > 0 && (
+          <StatCard
+            title="Paused Tasks"
+            value={pausedCount}
+            icon={<PauseCircle size={18} className="text-purple-500" />}
+            color="bg-purple-100"
+            loading={statsLoading}
+          />
+        )}
       </div>
 
       {isAdmin && (
         <AssigneeTaskList
           pendingInstances={pendingInstances}
           loading={allTasksLoading || adminLoading || completionsLoading}
+        />
+      )}
+
+      {/* Department section - admin only */}
+      {isAdmin && (
+        <DepartmentSection
+          pendingInstances={pendingInstances}
+          doneInstances={doneInstances}
+          loading={statsLoading}
         />
       )}
 

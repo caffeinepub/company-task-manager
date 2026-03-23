@@ -34,15 +34,23 @@ import {
   CalendarIcon,
   ClipboardList,
   Loader2,
+  PauseCircle,
+  PlayCircle,
   Search,
   Trash2,
   X,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { FrequencyType, Priority, TaskStatus } from "../backend.d";
 import type { Task } from "../backend.d";
-import { useAllTasks, useDeleteTask, useIsAdmin } from "../hooks/useQueries";
+import { usePausedTasks } from "../hooks/usePausedTasks";
+import {
+  useAllTasks,
+  useAllUserProfiles,
+  useDeleteTask,
+  useIsAdmin,
+} from "../hooks/useQueries";
 
 function frequencyLabel(task: Task): string {
   const freq = task.frequency as FrequencyType;
@@ -77,7 +85,11 @@ function PriorityBadge({ priority }: { priority: Priority }) {
   return <Badge className={`${className} text-xs font-medium`}>{label}</Badge>;
 }
 
-function StatusBadge({ status }: { status: TaskStatus }) {
+function StatusBadge({
+  status,
+  paused,
+  pausedUntil,
+}: { status: TaskStatus; paused: boolean; pausedUntil: string | null }) {
   const map: Record<TaskStatus, { label: string; className: string }> = {
     [TaskStatus.todo]: {
       label: "Todo",
@@ -93,7 +105,45 @@ function StatusBadge({ status }: { status: TaskStatus }) {
     },
   };
   const { label, className } = map[status];
-  return <Badge className={`${className} text-xs font-medium`}>{label}</Badge>;
+  return (
+    <div className="flex flex-wrap gap-1">
+      <Badge className={`${className} text-xs font-medium`}>{label}</Badge>
+      {paused && pausedUntil && (
+        <Badge className="bg-amber-100 text-amber-700 border-amber-200 text-xs font-medium">
+          Paused until {pausedUntil}
+        </Badge>
+      )}
+    </div>
+  );
+}
+
+function PauseButton({
+  index,
+  isPaused,
+  onPause,
+  onResume,
+}: {
+  index: number;
+  isPaused: boolean;
+  onPause: () => void;
+  onResume: () => void;
+}) {
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      className={`h-8 w-8 ${
+        isPaused
+          ? "text-amber-500 hover:bg-amber-50"
+          : "text-muted-foreground hover:bg-muted"
+      }`}
+      title={isPaused ? "Resume task" : "Pause task for 5 days"}
+      data-ocid={`all_tasks.toggle.${index + 1}`}
+      onClick={() => (isPaused ? onResume() : onPause())}
+    >
+      {isPaused ? <PlayCircle size={14} /> : <PauseCircle size={14} />}
+    </Button>
+  );
 }
 
 function DeleteButton({ task, index }: { task: Task; index: number }) {
@@ -142,12 +192,34 @@ function DeleteButton({ task, index }: { task: Task; index: number }) {
 export default function AllTasksPage() {
   const { data: isAdmin, isLoading: isAdminLoading } = useIsAdmin();
   const { data: tasks, isLoading } = useAllTasks();
+  const { data: profileEntries = [] } = useAllUserProfiles();
+  const { pauseTask, unpauseTask, isPaused, pausedUntil } = usePausedTasks();
 
   const [nameFilter, setNameFilter] = useState("");
+  const [assigneeFilter, setAssigneeFilter] = useState("");
+  const [debouncedAssignee, setDebouncedAssignee] = useState("");
   const [startDate, setStartDate] = useState<Date | undefined>(undefined);
   const [endDate, setEndDate] = useState<Date | undefined>(undefined);
   const [startOpen, setStartOpen] = useState(false);
   const [endOpen, setEndOpen] = useState(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Build a map: principal string -> name
+  const profileMap = new Map<string, string>();
+  for (const entry of profileEntries) {
+    profileMap.set(entry.principal.toString(), entry.profile.name);
+  }
+
+  // Debounce assignee filter
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      setDebouncedAssignee(assigneeFilter);
+    }, 300);
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [assigneeFilter]);
 
   if (isAdminLoading) {
     return (
@@ -176,6 +248,11 @@ export default function AllTasksPage() {
       const q = nameFilter.trim().toLowerCase();
       if (!task.title.toLowerCase().includes(q)) return false;
     }
+    if (debouncedAssignee.trim()) {
+      const q = debouncedAssignee.trim().toLowerCase();
+      const assigneeName = profileMap.get(task.assignee.toString()) ?? "";
+      if (!assigneeName.toLowerCase().includes(q)) return false;
+    }
     if (startDate || endDate) {
       if (!task.targetDate) return false;
       try {
@@ -197,11 +274,14 @@ export default function AllTasksPage() {
 
   const clearFilters = () => {
     setNameFilter("");
+    setAssigneeFilter("");
+    setDebouncedAssignee("");
     setStartDate(undefined);
     setEndDate(undefined);
   };
 
-  const hasFilters = nameFilter.trim() || startDate || endDate;
+  const hasFilters =
+    nameFilter.trim() || assigneeFilter.trim() || startDate || endDate;
 
   return (
     <div className="max-w-6xl mx-auto space-y-5 animate-fade-up">
@@ -218,8 +298,8 @@ export default function AllTasksPage() {
       {/* Filters */}
       <Card className="shadow-card">
         <CardContent className="p-4">
-          <div className="flex flex-col sm:flex-row gap-3 items-end">
-            <div className="flex-1 space-y-1">
+          <div className="flex flex-col sm:flex-row gap-3 items-end flex-wrap">
+            <div className="flex-1 min-w-[160px] space-y-1">
               <Label className="text-xs text-muted-foreground">
                 Search by Name
               </Label>
@@ -233,6 +313,26 @@ export default function AllTasksPage() {
                   placeholder="Task name..."
                   value={nameFilter}
                   onChange={(e) => setNameFilter(e.target.value)}
+                  data-ocid="all_tasks.search_input"
+                />
+              </div>
+            </div>
+
+            <div className="flex-1 min-w-[160px] space-y-1">
+              <Label className="text-xs text-muted-foreground">
+                Search by Assignee
+              </Label>
+              <div className="relative">
+                <Search
+                  size={14}
+                  className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+                />
+                <Input
+                  className="pl-8 h-9"
+                  placeholder="Assignee name..."
+                  value={assigneeFilter}
+                  onChange={(e) => setAssigneeFilter(e.target.value)}
+                  data-ocid="all_tasks.search_input"
                 />
               </div>
             </div>
@@ -360,48 +460,80 @@ export default function AllTasksPage() {
                   <TableHead className="hidden lg:table-cell">
                     Department
                   </TableHead>
-                  <TableHead className="w-12" />
+                  <TableHead className="w-20" />
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredTasks.map((task, i) => (
-                  <TableRow
-                    key={task.id.toString()}
-                    data-ocid={`all_tasks.row.${i + 1}`}
-                  >
-                    <TableCell>
-                      <div>
-                        <p className="font-medium text-sm">{task.title}</p>
-                        <p className="text-xs text-muted-foreground line-clamp-1">
-                          {task.description}
-                        </p>
-                      </div>
-                    </TableCell>
-                    <TableCell className="hidden md:table-cell">
-                      <span className="text-xs font-mono text-muted-foreground">
-                        {task.assignee.toString().slice(0, 12)}&hellip;
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      <PriorityBadge priority={task.priority} />
-                    </TableCell>
-                    <TableCell>
-                      <StatusBadge status={task.status} />
-                    </TableCell>
-                    <TableCell className="hidden sm:table-cell text-sm">
-                      {task.targetDate}
-                    </TableCell>
-                    <TableCell className="hidden lg:table-cell text-xs text-muted-foreground">
-                      {frequencyLabel(task)}
-                    </TableCell>
-                    <TableCell className="hidden lg:table-cell text-xs text-muted-foreground">
-                      {task.department || "-"}
-                    </TableCell>
-                    <TableCell>
-                      <DeleteButton task={task} index={i} />
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {filteredTasks.map((task, i) => {
+                  const taskIdStr = task.id.toString();
+                  const paused = isPaused(taskIdStr);
+                  const pausedUntilDate = pausedUntil(taskIdStr);
+                  const assigneeName =
+                    profileMap.get(task.assignee.toString()) ?? null;
+                  return (
+                    <TableRow
+                      key={taskIdStr}
+                      data-ocid={`all_tasks.row.${i + 1}`}
+                      className={paused ? "opacity-60" : ""}
+                    >
+                      <TableCell>
+                        <div>
+                          <p className="font-medium text-sm">{task.title}</p>
+                          <p className="text-xs text-muted-foreground line-clamp-1">
+                            {task.description}
+                          </p>
+                        </div>
+                      </TableCell>
+                      <TableCell className="hidden md:table-cell">
+                        {assigneeName ? (
+                          <span className="text-xs font-medium text-foreground">
+                            {assigneeName}
+                          </span>
+                        ) : (
+                          <span className="text-xs font-mono text-muted-foreground">
+                            {task.assignee.toString().slice(0, 12)}&hellip;
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <PriorityBadge priority={task.priority} />
+                      </TableCell>
+                      <TableCell>
+                        <StatusBadge
+                          status={task.status}
+                          paused={paused}
+                          pausedUntil={pausedUntilDate}
+                        />
+                      </TableCell>
+                      <TableCell className="hidden sm:table-cell text-sm">
+                        {task.targetDate}
+                      </TableCell>
+                      <TableCell className="hidden lg:table-cell text-xs text-muted-foreground">
+                        {frequencyLabel(task)}
+                      </TableCell>
+                      <TableCell className="hidden lg:table-cell text-xs text-muted-foreground">
+                        {task.department || "-"}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-1">
+                          <PauseButton
+                            index={i}
+                            isPaused={paused}
+                            onPause={() => {
+                              pauseTask(taskIdStr);
+                              toast.success("Task paused for 5 days");
+                            }}
+                            onResume={() => {
+                              unpauseTask(taskIdStr);
+                              toast.success("Task resumed");
+                            }}
+                          />
+                          <DeleteButton task={task} index={i} />
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           )}

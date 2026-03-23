@@ -15,8 +15,13 @@ import {
 import type { TaskInstance } from "../utils/taskInstances";
 import { expandAllTaskInstances } from "../utils/taskInstances";
 
+/** Returns today as YYYY-MM-DD using LOCAL time (avoids UTC timezone day shift). */
 function todayStr(): string {
-  return new Date().toISOString().slice(0, 10);
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
 function formatDate(dateStr: string): string {
@@ -220,16 +225,23 @@ export function getEffectiveTargetDate(task: {
     }
     const result = new Date(today);
     result.setDate(today.getDate() + minDiff);
-    return result.toISOString().slice(0, 10);
+    return toLocalDateStr(result);
   }
   if (freq === FrequencyType.monthly && task.frequencyDays) {
     const dayOfMonth = Number(task.frequencyDays.trim());
     const now = new Date();
     const target = new Date(now.getFullYear(), now.getMonth(), dayOfMonth);
     if (target < now) target.setMonth(target.getMonth() + 1);
-    return target.toISOString().slice(0, 10);
+    return toLocalDateStr(target);
   }
   return task.targetDate;
+}
+
+function toLocalDateStr(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
 export default function MyTasksPage() {

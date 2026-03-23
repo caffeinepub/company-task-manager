@@ -5,6 +5,7 @@ import Int "mo:core/Int";
 import Time "mo:core/Time";
 import Iter "mo:core/Iter";
 import Runtime "mo:core/Runtime";
+import Nat "mo:core/Nat";
 
 
 import MixinAuthorization "authorization/MixinAuthorization";
@@ -14,6 +15,30 @@ import AccessControl "authorization/access-control";
 actor {
   stable let accessControlState = AccessControl.initState();
   include MixinAuthorization(accessControlState);
+
+  // --- Permanent admin store: survives all deployments independently ---
+  stable let adminPrincipals = Map.empty<Principal, Bool>();
+
+  // Checks both permanent store and MixinAuthorization state
+  private func isAdminPrincipal(p : Principal) : Bool {
+    switch (adminPrincipals.get(p)) {
+      case (?true) {
+        // Also ensure MixinAuthorization state is in sync
+        accessControlState.userRoles.add(p, #admin);
+        accessControlState.adminAssigned := true;
+        true;
+      };
+      case (_) { AccessControl.isAdmin(accessControlState, p) };
+    };
+  };
+
+  private func countPermanentAdmins() : Nat {
+    var count = 0;
+    for ((_, v) in adminPrincipals.entries()) {
+      if (v) { count += 1 };
+    };
+    count;
+  };
 
   public type Priority = {
     #low;
@@ -100,8 +125,15 @@ actor {
   stable let taskCompletedAt = Map.empty<Nat, Int>();
   stable let taskInstanceCompletions = Map.empty<Text, Int>();
 
-  // Migrate legacy data on upgrade
+  // Migrate legacy data on upgrade; also re-sync permanent admins into MixinAuthorization
   system func postupgrade() {
+    // Re-sync permanent admins into MixinAuthorization state so isCallerAdmin() works
+    for ((p, isAdmin) in adminPrincipals.entries()) {
+      if (isAdmin) {
+        accessControlState.userRoles.add(p, #admin);
+        accessControlState.adminAssigned := true;
+      };
+    };
     // Migrate V1 -> V3
     for ((id, t) in tasks.entries()) {
       if (tasksV3.get(id) == null) {
@@ -141,6 +173,9 @@ actor {
   };
 
   private func countAdmins() : Nat {
+    let permanent = countPermanentAdmins();
+    if (permanent > 0) { return permanent };
+    // fallback to MixinAuthorization count
     var count = 0;
     for ((_, role) in accessControlState.userRoles.entries()) {
       switch (role) {
@@ -151,17 +186,18 @@ actor {
     count;
   };
 
+  // bootstrapAdmin: works if permanent admin store is empty
   public shared ({ caller }) func bootstrapAdmin() : async Bool {
     if (caller.isAnonymous()) {
       Runtime.trap("Unauthorized: Anonymous principals cannot claim admin");
     };
-    let adminCount = countAdmins();
-    if (adminCount > 0) {
-      if (AccessControl.isAdmin(accessControlState, caller)) {
-        return true;
-      };
+    let permanentCount = countPermanentAdmins();
+    if (permanentCount > 0) {
+      if (isAdminPrincipal(caller)) { return true };
       return false;
     };
+    // No permanent admins: allow claiming
+    adminPrincipals.add(caller, true);
     accessControlState.userRoles.add(caller, #admin);
     accessControlState.adminAssigned := true;
     true;
@@ -176,7 +212,7 @@ actor {
   };
 
   public shared ({ caller }) func assignUserRoleAsAdmin(user : Principal, role : AccessControl.UserRole) : async () {
-    if (not (AccessControl.isAdmin(accessControlState, caller))) {
+    if (not isAdminPrincipal(caller)) {
       Runtime.trap("Unauthorized: Only admins can assign roles");
     };
     switch (role) {
@@ -185,8 +221,11 @@ actor {
         if (currentAdminCount >= 10) {
           Runtime.trap("Cannot assign admin role: Maximum of 10 admins reached");
         };
+        adminPrincipals.add(user, true);
       };
-      case (_) {};
+      case (_) {
+        adminPrincipals.remove(user);
+      };
     };
     AccessControl.assignRole(accessControlState, caller, user, role);
   };
@@ -196,7 +235,7 @@ actor {
   };
 
   public query ({ caller }) func getUserProfile(userPrincipal : Principal) : async ?UserProfile {
-    if (caller != userPrincipal and not AccessControl.isAdmin(accessControlState, caller)) {
+    if (caller != userPrincipal and not isAdminPrincipal(caller)) {
       Runtime.trap("Unauthorized: Can only view your own profile");
     };
     userProfiles.get(userPrincipal);
@@ -210,21 +249,21 @@ actor {
   };
 
   public query ({ caller }) func getAllUserProfiles() : async [UserProfileEntry] {
-    if (not (AccessControl.isAdmin(accessControlState, caller))) {
+    if (not isAdminPrincipal(caller)) {
       Runtime.trap("Unauthorized: Only admins can view all user profiles");
     };
     userProfiles.entries().map(func((p, profile)) { { principal = p; profile } }).toArray();
   };
 
   public query ({ caller }) func getTasksByEmployee(employee : Principal) : async [Task] {
-    if (not (AccessControl.isAdmin(accessControlState, caller))) {
+    if (not isAdminPrincipal(caller)) {
       Runtime.trap("Unauthorized: Only admins can view employee tasks");
     };
     tasksV3.values().filter(func(task) { task.assignee == employee }).toArray();
   };
 
   public query ({ caller }) func getCompletionDates() : async [CompletionDate] {
-    if (not (AccessControl.isAdmin(accessControlState, caller))) {
+    if (not isAdminPrincipal(caller)) {
       Runtime.trap("Unauthorized: Only admins can view completion dates");
     };
     taskCompletedAt.entries().map(func((id, ts)) { { taskId = id; completionTimestamp = ts } }).toArray();
@@ -240,7 +279,7 @@ actor {
     frequencyDays : Text,
     department : Text
   ) : async Nat {
-    if (not (AccessControl.isAdmin(accessControlState, caller))) {
+    if (not isAdminPrincipal(caller)) {
       Runtime.trap("Unauthorized: Only admins can create tasks");
     };
 
@@ -269,7 +308,7 @@ actor {
     switch (tasksV3.get(taskId)) {
       case (null) { null };
       case (?task) {
-        if (task.assignee == caller or AccessControl.isAdmin(accessControlState, caller)) {
+        if (task.assignee == caller or isAdminPrincipal(caller)) {
           ?task;
         } else {
           null;
@@ -284,7 +323,7 @@ actor {
   };
 
   public query ({ caller }) func getAllTasks() : async [Task] {
-    if (not (AccessControl.isAdmin(accessControlState, caller))) {
+    if (not isAdminPrincipal(caller)) {
       Runtime.trap("Unauthorized: Only admins can view all tasks");
     };
     tasksV3.values().toArray();
@@ -297,7 +336,7 @@ actor {
     switch (tasksV3.get(taskId)) {
       case (null) { Runtime.trap("Task not found") };
       case (?task) {
-        if (task.assignee != caller and not AccessControl.isAdmin(accessControlState, caller)) {
+        if (task.assignee != caller and not isAdminPrincipal(caller)) {
           Runtime.trap("Unauthorized: Only assignee or admin can update status");
         };
         switch (newStatus) {
@@ -315,7 +354,7 @@ actor {
   };
 
   public shared ({ caller }) func deleteTask(taskId : Nat) : async () {
-    if (not (AccessControl.isAdmin(accessControlState, caller))) {
+    if (not isAdminPrincipal(caller)) {
       Runtime.trap("Unauthorized: Only admins can delete tasks");
     };
     switch (tasksV3.get(taskId)) {
@@ -332,7 +371,7 @@ actor {
     var todoCount = 0;
     var inProgressCount = 0;
     var doneCount = 0;
-    let isAdminCaller = AccessControl.isAdmin(accessControlState, caller);
+    let isAdminCaller = isAdminPrincipal(caller);
     for (task in tasksV3.values()) {
       if (isAdminCaller or task.assignee == caller) {
         switch (task.status) {
@@ -350,7 +389,7 @@ actor {
     switch (tasksV3.get(taskId)) {
       case (null) { Runtime.trap("Task not found") };
       case (?task) {
-        if (task.assignee != caller and not AccessControl.isAdmin(accessControlState, caller)) {
+        if (task.assignee != caller and not isAdminPrincipal(caller)) {
           Runtime.trap("Unauthorized: Only assignee or admin can mark as completed");
         };
         let key = taskId.toText() # "_" # targetDate;
@@ -363,7 +402,7 @@ actor {
     switch (tasksV3.get(taskId)) {
       case (null) { Runtime.trap("Task not found") };
       case (?task) {
-        if (task.assignee != caller and not AccessControl.isAdmin(accessControlState, caller)) {
+        if (task.assignee != caller and not isAdminPrincipal(caller)) {
           Runtime.trap("Unauthorized: Only assignee or admin can unmark completion");
         };
         let key = taskId.toText() # "_" # targetDate;
@@ -377,16 +416,13 @@ actor {
       Runtime.trap("Unauthorized: must be logged in");
     };
     
-    let isAdminCaller = AccessControl.isAdmin(accessControlState, caller);
+    let isAdminCaller = isAdminPrincipal(caller);
     
-    // Admins see all completions
     if (isAdminCaller) {
       return taskInstanceCompletions.entries().toArray();
     };
     
-    // Regular users see only completions for their assigned tasks
     taskInstanceCompletions.entries().filter(func((key, timestamp)) {
-      // Parse taskId from key format "taskId_YYYY-MM-DD"
       let parts = key.split(#char '_');
       switch (parts.next()) {
         case (?taskIdText) {

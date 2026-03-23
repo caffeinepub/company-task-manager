@@ -9,8 +9,12 @@ export interface TaskInstance {
   completedAt?: bigint;
 }
 
+/** Format a Date as YYYY-MM-DD using LOCAL time (avoids UTC-offset day shift). */
 function toDateStr(d: Date): string {
-  return d.toISOString().slice(0, 10);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
 function addDays(d: Date, n: number): Date {
@@ -66,10 +70,12 @@ export function expandDailyTaskInstances(
  * Expand all tasks into instances.
  * - Daily tasks: one instance per day from targetDate to today
  * - Weekly/Monthly/None tasks: one instance using existing status logic
+ * - pausedTaskIds: if provided, skip pending instances for those tasks
  */
 export function expandAllTaskInstances(
   tasks: Task[],
   instanceCompletions: Map<string, bigint>,
+  pausedTaskIds?: Set<string>,
 ): { pendingInstances: TaskInstance[]; doneInstances: TaskInstance[] } {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -79,6 +85,8 @@ export function expandAllTaskInstances(
 
   for (const task of tasks) {
     const freq = task.frequency as FrequencyType;
+    const taskIdStr = task.id.toString();
+    const isPaused = pausedTaskIds?.has(taskIdStr) ?? false;
 
     if (freq === FrequencyType.daily) {
       const instances = expandDailyTaskInstances(
@@ -88,10 +96,10 @@ export function expandAllTaskInstances(
       );
       for (const inst of instances) {
         if (inst.isDone) doneInstances.push(inst);
-        else pendingInstances.push(inst);
+        else if (!isPaused) pendingInstances.push(inst);
       }
     } else {
-      const key = `${task.id.toString()}_${task.targetDate}`;
+      const key = `${taskIdStr}_${task.targetDate}`;
       const isDone = task.status === TaskStatus.done;
       const inst: TaskInstance = {
         task,
@@ -101,7 +109,7 @@ export function expandAllTaskInstances(
         completedAt: isDone ? instanceCompletions.get(key) : undefined,
       };
       if (isDone) doneInstances.push(inst);
-      else pendingInstances.push(inst);
+      else if (!isPaused) pendingInstances.push(inst);
     }
   }
 

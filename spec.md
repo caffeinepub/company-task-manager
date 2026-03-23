@@ -1,38 +1,36 @@
 # Company Task Manager
 
 ## Current State
-The app has a full task management system with daily rollover logic, instance-based completion tracking, and CSV exports. The Employee Panel exports tasks in a detailed format (Task ID, Title, Description, Employee, Target Date, Priority, Status, Created At, Frequency, Department, Completed Date).
-
-The `expandAllTaskInstances` utility generates per-day instances for daily tasks, tracking each by `taskId_YYYY-MM-DD` key. Instance completions are stored via `markTaskInstanceDone` / `unmarkTaskInstanceDone`.
+- React + Motoko task management app with role-based access (Admin, Employee, Guest)
+- All Tasks page: filter by task name and date range, delete tasks
+- Dashboard: Pending/Completed stat cards, Assignee Task List, recent pending task list
+- Performance Dashboard: per-employee OnTime/Delayed/Pending analytics with date range filter
+- Tasks have: title, description, assignee, targetDate, priority, status, frequency, frequencyDays, department
+- Daily tasks use rollover logic (expandAllTaskInstances) to generate one instance per day
+- taskInstanceCompletions map tracks which daily instances are done
 
 ## Requested Changes (Diff)
 
 ### Add
-- A dedicated "Export by Date & Assignee (CSV)" button in the Employee Panel (both global and per-employee views) that outputs tasks in this exact format:
-  `Date,Assignee,Task_Name,Status,Completion_Date,Target_Date`
-  - Date = target date of the instance (DD-MM-YYYY format)
-  - Assignee = employee name
-  - Task_Name = task title
-  - Status = "Pending" or "Completed" (never todo/inProgress/done)
-  - Completion_Date = date completed in DD-MM-YYYY format (blank if pending)
-  - Target_Date = same as Date column (DD-MM-YYYY)
-  - Rows sorted by Date then Assignee
-  - Includes ALL task instances (daily rollover instances + non-daily tasks)
-  - For non-daily tasks: status is "Completed" if task.status === done, else "Pending"
-  - For daily tasks: status is "Completed" if instanceCompletions has the key, else "Pending"
+- **Pause functionality** (frontend/localStorage): Pause button on each row in All Tasks. When paused, task is hidden from Dashboard pending list and My Tasks active list from tomorrow for 5 days. Paused state stored in localStorage as `{taskId: string, pausedUntil: string (YYYY-MM-DD, +5 days from pause date)}`. Paused tasks still appear in Performance Dashboard and Tracking Report (not filtered out there).
+- **usePausedTasks hook**: manages localStorage read/write for paused tasks; exposes `pauseTask(taskId)`, `unpauseTask(taskId)`, `isPaused(taskId)`, `pausedUntil(taskId)` helpers.
+- **Assignee search** in All Tasks: add a second search input "Search by Assignee" next to existing task-name search. Requires fetching userProfiles to map principal -> name, then filtering tasks whose assignee name matches the query. Real-time with 300ms debounce.
+- **Total Tasks section** in Dashboard (admin only): stat cards showing Active (pending not paused), Paused, Completed total counts, and Total (sum of all).
+- **Department section** in Dashboard (admin only): card showing per-department breakdown - how many tasks are pending vs completed per department. Departments come from unique department values in allTasks.
+- **Department section** in Performance Dashboard (admin only): card showing per-department performance aggregated across all employees - OnTime/Delayed/Pending counts per department.
 
 ### Modify
-- The existing "Export All Assignees Pending & Complete (CSV)" button should remain but also add the new simplified export above it labeled "Export Tracking Report (CSV)"
-- In the per-employee EmployeeTaskView, add a similar "Export Tracking Report (CSV)" button alongside the existing buttons
+- **AllTasksPage**: add Pause/Resume button column, add assignee name search input with debounce, show Paused badge in Status column if task is paused.
+- **DashboardPage**: add Total Tasks section above existing stat cards, add Department section below Assignee Task List. Filter paused tasks out of pending instances for the main list and pending count.
+- **PerformancePage**: add Department Performance section at the bottom when no employee is selected (or always visible for admin).
+- **expandAllTaskInstances** (or consumer): accept optional set of paused task IDs and filter them from pendingInstances.
 
 ### Remove
-Nothing removed.
+- Nothing removed.
 
 ## Implementation Plan
-1. In `EmployeePanelPage.tsx`:
-   - Add a helper `toDisplayDate(dateStr: string)` that converts YYYY-MM-DD to DD-MM-YYYY
-   - Add `buildTrackingReportRows()` function that iterates all employees, expands task instances, and produces rows in the required format sorted by date + assignee
-   - Add "Export Tracking Report (CSV)" button in `ExportAllEmployeesCompletedButton` component
-   - Add per-employee "Export Tracking Report (CSV)" button in `EmployeeTaskView`
-   - Status mapping: isDone → "Completed", else → "Pending"
-   - Completion_Date: if isDone, format completedAt timestamp as DD-MM-YYYY, else blank
+1. Create `src/frontend/src/hooks/usePausedTasks.ts` - localStorage hook for pause state
+2. Update `src/frontend/src/utils/taskInstances.ts` - accept pausedTaskIds param, filter paused tasks from pending
+3. Update `AllTasksPage.tsx` - add Pause/Resume button, assignee name filter with debounce, Paused status badge
+4. Update `DashboardPage.tsx` - add Total Tasks stat section, add Department breakdown section, pass paused IDs to instance expansion
+5. Update `PerformancePage.tsx` - add Department Performance section

@@ -4,7 +4,16 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
   BarChart2,
+  Building2,
   CheckCircle2,
   Clock,
   Loader2,
@@ -17,6 +26,7 @@ import { useMemo, useState } from "react";
 import { FrequencyType } from "../backend.d";
 import type { Task, UserProfileEntry } from "../backend.d";
 import {
+  useAllTasks,
   useAllUserProfiles,
   useIsAdmin,
   useTaskInstanceCompletions,
@@ -40,6 +50,7 @@ function today0(): Date {
 interface TaskInstance {
   taskId: bigint;
   taskName: string;
+  department: string;
   instanceDate: string; // YYYY-MM-DD
   status: "onTime" | "delayed" | "pending";
 }
@@ -50,7 +61,6 @@ function generateInstances(
   fromDate: string,
   toDate: string,
 ): TaskInstance[] {
-  const _todayStr = dateToStr(today0());
   const instances: TaskInstance[] = [];
 
   const from = fromDate ? new Date(`${fromDate}T00:00:00`) : null;
@@ -103,6 +113,7 @@ function generateInstances(
       instances.push({
         taskId: task.id,
         taskName: task.title,
+        department: task.department?.trim() || "No Department",
         instanceDate: dateStr,
         status,
       });
@@ -168,6 +179,112 @@ function StatusBadge({ status }: { status: "onTime" | "delayed" | "pending" }) {
     <Badge className="bg-yellow-100 text-yellow-800 border-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-300">
       <Clock size={11} className="mr-1" /> Pending
     </Badge>
+  );
+}
+
+function DepartmentPerformance({ instances }: { instances: TaskInstance[] }) {
+  // Group instances by department
+  const deptMap = new Map<
+    string,
+    { onTime: number; delayed: number; pending: number }
+  >();
+
+  for (const inst of instances) {
+    const entry = deptMap.get(inst.department) ?? {
+      onTime: 0,
+      delayed: 0,
+      pending: 0,
+    };
+    entry[inst.status] += 1;
+    deptMap.set(inst.department, entry);
+  }
+
+  const rows = Array.from(deptMap.entries())
+    .map(([dept, counts]) => ({
+      dept,
+      onTime: counts.onTime,
+      delayed: counts.delayed,
+      pending: counts.pending,
+      total: counts.onTime + counts.delayed + counts.pending,
+    }))
+    .sort((a, b) => b.total - a.total);
+
+  if (rows.length === 0) return null;
+
+  return (
+    <Card data-ocid="performance.dept.card">
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <Building2 size={16} className="text-primary" />
+          Department Performance
+        </CardTitle>
+        <p className="text-xs text-muted-foreground">
+          Performance breakdown by department
+        </p>
+      </CardHeader>
+      <CardContent className="p-0">
+        <div className="overflow-x-auto">
+          <Table data-ocid="performance.dept.table">
+            <TableHeader>
+              <TableRow>
+                <TableHead>Department</TableHead>
+                <TableHead className="text-right">Total</TableHead>
+                <TableHead className="text-right">On Time</TableHead>
+                <TableHead className="text-right">Delayed</TableHead>
+                <TableHead className="text-right">Pending</TableHead>
+                <TableHead>On Time %</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.map((row, idx) => {
+                const onTimePct = pct(row.onTime, row.total);
+                return (
+                  <TableRow
+                    key={row.dept}
+                    data-ocid={`performance.dept.row.${idx + 1}`}
+                  >
+                    <TableCell className="font-medium text-sm">
+                      {row.dept}
+                    </TableCell>
+                    <TableCell className="text-right text-sm">
+                      {row.total}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Badge className="bg-green-100 text-green-700 border-0 text-xs">
+                        {row.onTime}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Badge className="bg-red-100 text-red-700 border-0 text-xs">
+                        {row.delayed}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Badge className="bg-amber-100 text-amber-700 border-0 text-xs">
+                        {row.pending}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden min-w-[60px]">
+                          <div
+                            className="h-full rounded-full bg-green-500 transition-all duration-700"
+                            style={{ width: `${onTimePct}%` }}
+                          />
+                        </div>
+                        <span className="text-xs text-muted-foreground w-9 text-right">
+                          {onTimePct}%
+                        </span>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -400,6 +517,9 @@ function EmployeePerformance({
         </CardContent>
       </Card>
 
+      {/* Department Performance */}
+      <DepartmentPerformance instances={instances} />
+
       {/* Detail table */}
       <Card data-ocid="performance.table">
         <CardHeader>
@@ -450,6 +570,33 @@ function EmployeePerformance({
       </Card>
     </div>
   );
+}
+
+function AllCompanyDepartmentPerformance({
+  fromDate,
+  toDate,
+}: { fromDate: string; toDate: string }) {
+  const { data: allTasks = [], isLoading: loadingTasks } = useAllTasks();
+  const {
+    data: completions = new Map<string, bigint>(),
+    isLoading: loadingCompletions,
+  } = useTaskInstanceCompletions();
+
+  const instances = useMemo(
+    () => generateInstances(allTasks, completions, fromDate, toDate),
+    [allTasks, completions, fromDate, toDate],
+  );
+
+  if (loadingTasks || loadingCompletions) {
+    return (
+      <div className="flex items-center justify-center py-8">
+        <Loader2 className="h-5 w-5 animate-spin text-primary" />
+        <span className="ml-2 text-sm text-muted-foreground">Loading...</span>
+      </div>
+    );
+  }
+
+  return <DepartmentPerformance instances={instances} />;
 }
 
 export default function PerformancePage() {
@@ -637,18 +784,25 @@ export default function PerformancePage() {
           toDate={toDate}
         />
       ) : (
-        <div
-          className="flex flex-col items-center justify-center py-16 text-center"
-          data-ocid="performance.empty_state"
-        >
-          <BarChart2 className="h-12 w-12 text-muted-foreground mb-3" />
-          <p className="text-base font-medium text-foreground">
-            No employee selected
-          </p>
-          <p className="text-sm text-muted-foreground mt-1">
-            Search for an employee above to view their performance scores
-          </p>
-        </div>
+        <>
+          <div
+            className="flex flex-col items-center justify-center py-10 text-center"
+            data-ocid="performance.empty_state"
+          >
+            <BarChart2 className="h-12 w-12 text-muted-foreground mb-3" />
+            <p className="text-base font-medium text-foreground">
+              No employee selected
+            </p>
+            <p className="text-sm text-muted-foreground mt-1">
+              Search for an employee above to view their performance scores
+            </p>
+          </div>
+          {/* All-company department stats */}
+          <AllCompanyDepartmentPerformance
+            fromDate={fromDate}
+            toDate={toDate}
+          />
+        </>
       )}
     </div>
   );
