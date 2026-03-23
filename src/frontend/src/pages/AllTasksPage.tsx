@@ -44,12 +44,14 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { FrequencyType, Priority, TaskStatus } from "../backend.d";
 import type { Task } from "../backend.d";
-import { usePausedTasks } from "../hooks/usePausedTasks";
 import {
   useAllTasks,
   useAllUserProfiles,
   useDeleteTask,
   useIsAdmin,
+  usePauseTask,
+  useTaskPauseStates,
+  useUnpauseTask,
 } from "../hooks/useQueries";
 
 function frequencyLabel(task: Task): string {
@@ -88,8 +90,10 @@ function PriorityBadge({ priority }: { priority: Priority }) {
 function StatusBadge({
   status,
   paused,
-  pausedUntil,
-}: { status: TaskStatus; paused: boolean; pausedUntil: string | null }) {
+}: {
+  status: TaskStatus;
+  paused: boolean;
+}) {
   const map: Record<TaskStatus, { label: string; className: string }> = {
     [TaskStatus.todo]: {
       label: "Todo",
@@ -108,9 +112,9 @@ function StatusBadge({
   return (
     <div className="flex flex-wrap gap-1">
       <Badge className={`${className} text-xs font-medium`}>{label}</Badge>
-      {paused && pausedUntil && (
+      {paused && (
         <Badge className="bg-amber-100 text-amber-700 border-amber-200 text-xs font-medium">
-          Paused until {pausedUntil}
+          Paused (indefinitely)
         </Badge>
       )}
     </div>
@@ -122,22 +126,25 @@ function PauseButton({
   isPaused,
   onPause,
   onResume,
+  isLoading,
 }: {
   index: number;
   isPaused: boolean;
   onPause: () => void;
   onResume: () => void;
+  isLoading?: boolean;
 }) {
   return (
     <Button
       variant="ghost"
       size="icon"
+      disabled={isLoading}
       className={`h-8 w-8 ${
         isPaused
           ? "text-amber-500 hover:bg-amber-50"
           : "text-muted-foreground hover:bg-muted"
       }`}
-      title={isPaused ? "Resume task" : "Pause task for 5 days"}
+      title={isPaused ? "Resume task" : "Pause task indefinitely"}
       data-ocid={`all_tasks.toggle.${index + 1}`}
       onClick={() => (isPaused ? onResume() : onPause())}
     >
@@ -193,7 +200,10 @@ export default function AllTasksPage() {
   const { data: isAdmin, isLoading: isAdminLoading } = useIsAdmin();
   const { data: tasks, isLoading } = useAllTasks();
   const { data: profileEntries = [] } = useAllUserProfiles();
-  const { pauseTask, unpauseTask, isPaused, pausedUntil } = usePausedTasks();
+  const { data: pauseStates = new Map(), isLoading: pauseLoading } =
+    useTaskPauseStates();
+  const pauseMutation = usePauseTask();
+  const unpauseMutation = useUnpauseTask();
 
   const [nameFilter, setNameFilter] = useState("");
   const [assigneeFilter, setAssigneeFilter] = useState("");
@@ -209,6 +219,11 @@ export default function AllTasksPage() {
   for (const entry of profileEntries) {
     profileMap.set(entry.principal.toString(), entry.profile.name);
   }
+
+  const isPaused = (taskIdStr: string): boolean => {
+    const state = pauseStates.get(taskIdStr);
+    return !!state && state.pausedAt !== "" && state.unpausedAt === "";
+  };
 
   // Debounce assignee filter
   useEffect(() => {
@@ -420,7 +435,7 @@ export default function AllTasksPage() {
 
       <Card className="shadow-card">
         <CardContent className="p-0">
-          {isLoading ? (
+          {isLoading || pauseLoading ? (
             <div className="p-6 space-y-3" data-ocid="all_tasks.loading_state">
               {[1, 2, 3, 4].map((i) => (
                 <Skeleton key={i} className="h-12 w-full" />
@@ -467,7 +482,6 @@ export default function AllTasksPage() {
                 {filteredTasks.map((task, i) => {
                   const taskIdStr = task.id.toString();
                   const paused = isPaused(taskIdStr);
-                  const pausedUntilDate = pausedUntil(taskIdStr);
                   const assigneeName =
                     profileMap.get(task.assignee.toString()) ?? null;
                   return (
@@ -499,11 +513,7 @@ export default function AllTasksPage() {
                         <PriorityBadge priority={task.priority} />
                       </TableCell>
                       <TableCell>
-                        <StatusBadge
-                          status={task.status}
-                          paused={paused}
-                          pausedUntil={pausedUntilDate}
-                        />
+                        <StatusBadge status={task.status} paused={paused} />
                       </TableCell>
                       <TableCell className="hidden sm:table-cell text-sm">
                         {task.targetDate}
@@ -519,13 +529,24 @@ export default function AllTasksPage() {
                           <PauseButton
                             index={i}
                             isPaused={paused}
+                            isLoading={
+                              pauseMutation.isPending ||
+                              unpauseMutation.isPending
+                            }
                             onPause={() => {
-                              pauseTask(taskIdStr);
-                              toast.success("Task paused for 5 days");
+                              pauseMutation.mutate(task.id, {
+                                onSuccess: () =>
+                                  toast.success("Task paused indefinitely"),
+                                onError: () =>
+                                  toast.error("Failed to pause task"),
+                              });
                             }}
                             onResume={() => {
-                              unpauseTask(taskIdStr);
-                              toast.success("Task resumed");
+                              unpauseMutation.mutate(task.id, {
+                                onSuccess: () => toast.success("Task resumed"),
+                                onError: () =>
+                                  toast.error("Failed to resume task"),
+                              });
                             }}
                           />
                           <DeleteButton task={task} index={i} />

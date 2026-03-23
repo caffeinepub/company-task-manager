@@ -1,5 +1,5 @@
 import { FrequencyType, TaskStatus } from "../backend.d";
-import type { Task } from "../backend.d";
+import type { Task, TaskPauseState } from "../backend.d";
 
 export interface TaskInstance {
   task: Task;
@@ -26,6 +26,26 @@ function addDays(d: Date, n: number): Date {
 function parseDate(s: string): Date {
   const [y, m, d] = s.split("-").map(Number);
   return new Date(y, m - 1, d);
+}
+
+function nanoTsToDateStr(nanoTs: string): string {
+  const ms = Number(BigInt(nanoTs) / 1_000_000n);
+  const d = new Date(ms);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+export function isInPausedPeriod(
+  taskIdStr: string,
+  instanceDate: string,
+  pauseStateMap: Map<string, { pausedAt: string; unpausedAt: string }>,
+): boolean {
+  const state = pauseStateMap.get(taskIdStr);
+  if (!state || !state.pausedAt) return false;
+  const pausedAtDate = nanoTsToDateStr(state.pausedAt);
+  if (instanceDate < pausedAtDate) return false;
+  if (state.unpausedAt === "") return true;
+  const unpausedAtDate = nanoTsToDateStr(state.unpausedAt);
+  return instanceDate < unpausedAtDate;
 }
 
 /**
@@ -71,22 +91,29 @@ export function expandDailyTaskInstances(
  * - Daily tasks: one instance per day from targetDate to today
  * - Weekly/Monthly/None tasks: one instance using existing status logic
  * - pausedTaskIds: if provided, skip pending instances for those tasks
+ * - pauseStateMap: if provided, instances in paused periods go to pausedInstances
  */
 export function expandAllTaskInstances(
   tasks: Task[],
   instanceCompletions: Map<string, bigint>,
   pausedTaskIds?: Set<string>,
-): { pendingInstances: TaskInstance[]; doneInstances: TaskInstance[] } {
+  pauseStateMap?: Map<string, TaskPauseState>,
+): {
+  pendingInstances: TaskInstance[];
+  doneInstances: TaskInstance[];
+  pausedInstances: TaskInstance[];
+} {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
   const pendingInstances: TaskInstance[] = [];
   const doneInstances: TaskInstance[] = [];
+  const pausedInstances: TaskInstance[] = [];
 
   for (const task of tasks) {
     const freq = task.frequency as FrequencyType;
     const taskIdStr = task.id.toString();
-    const isPaused = pausedTaskIds?.has(taskIdStr) ?? false;
+    const currentlyPaused = pausedTaskIds?.has(taskIdStr) ?? false;
 
     if (freq === FrequencyType.daily) {
       const instances = expandDailyTaskInstances(
@@ -95,8 +122,18 @@ export function expandAllTaskInstances(
         new Date(today),
       );
       for (const inst of instances) {
-        if (inst.isDone) doneInstances.push(inst);
-        else if (!isPaused) pendingInstances.push(inst);
+        if (inst.isDone) {
+          doneInstances.push(inst);
+        } else {
+          const inPause = pauseStateMap
+            ? isInPausedPeriod(taskIdStr, inst.targetDate, pauseStateMap)
+            : currentlyPaused;
+          if (inPause) {
+            pausedInstances.push(inst);
+          } else {
+            pendingInstances.push(inst);
+          }
+        }
       }
     } else {
       const key = `${taskIdStr}_${task.targetDate}`;
@@ -108,8 +145,18 @@ export function expandAllTaskInstances(
         isDone,
         completedAt: isDone ? instanceCompletions.get(key) : undefined,
       };
-      if (isDone) doneInstances.push(inst);
-      else if (!isPaused) pendingInstances.push(inst);
+      if (isDone) {
+        doneInstances.push(inst);
+      } else {
+        const inPause = pauseStateMap
+          ? isInPausedPeriod(taskIdStr, inst.targetDate, pauseStateMap)
+          : currentlyPaused;
+        if (inPause) {
+          pausedInstances.push(inst);
+        } else {
+          pendingInstances.push(inst);
+        }
+      }
     }
   }
 
@@ -119,5 +166,5 @@ export function expandAllTaskInstances(
     return a.task.title.localeCompare(b.task.title);
   });
 
-  return { pendingInstances, doneInstances };
+  return { pendingInstances, doneInstances, pausedInstances };
 }

@@ -13,6 +13,7 @@ import AllTasksPage from "./pages/AllTasksPage";
 import CreateTaskPage from "./pages/CreateTaskPage";
 import DashboardPage from "./pages/DashboardPage";
 import EmployeePanelPage from "./pages/EmployeePanelPage";
+import EmployeeTasksPage from "./pages/EmployeeTasksPage";
 import LoginPage from "./pages/LoginPage";
 import MyTasksPage from "./pages/MyTasksPage";
 import PerformancePage from "./pages/PerformancePage";
@@ -95,6 +96,12 @@ const employeePanelRoute = createRoute({
   component: EmployeePanelPage,
 });
 
+const employeeTasksRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/employee-tasks",
+  component: EmployeeTasksPage,
+});
+
 const performanceRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/performance",
@@ -109,6 +116,7 @@ const routeTree = rootRoute.addChildren([
   profileRoute,
   adminPanelRoute,
   employeePanelRoute,
+  employeeTasksRoute,
   performanceRoute,
 ]);
 

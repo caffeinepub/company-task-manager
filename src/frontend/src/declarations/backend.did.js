@@ -54,6 +54,10 @@ export const CompletionDate = IDL.Record({
   'taskId' : IDL.Nat,
   'completionTimestamp' : IDL.Int,
 });
+export const TaskPauseState = IDL.Record({
+  'pausedAt' : IDL.Text,
+  'unpausedAt' : IDL.Text,
+});
 
 export const idlService = IDL.Service({
   '_initializeAccessControlWithSecret' : IDL.Func([IDL.Text], [], []),
@@ -89,6 +93,11 @@ export const idlService = IDL.Service({
       [IDL.Vec(IDL.Tuple(IDL.Text, IDL.Int))],
       ['query'],
     ),
+  'getTaskPauseStates' : IDL.Func(
+      [],
+      [IDL.Vec(IDL.Tuple(IDL.Nat, TaskPauseState))],
+      ['query'],
+    ),
   'getTasksByEmployee' : IDL.Func([IDL.Principal], [IDL.Vec(Task)], ['query']),
   'getUserProfile' : IDL.Func(
       [IDL.Principal],
@@ -98,8 +107,10 @@ export const idlService = IDL.Service({
   'hasAnyAdmin' : IDL.Func([], [IDL.Bool], ['query']),
   'isCallerAdmin' : IDL.Func([], [IDL.Bool], ['query']),
   'markTaskInstanceDone' : IDL.Func([IDL.Nat, IDL.Text], [], []),
+  'pauseTask' : IDL.Func([IDL.Nat], [], []),
   'saveCallerUserProfile' : IDL.Func([UserProfile], [], []),
   'unmarkTaskInstanceDone' : IDL.Func([IDL.Nat, IDL.Text], [], []),
+  'unpauseTask' : IDL.Func([IDL.Nat], [], []),
   'updateTaskStatus' : IDL.Func([IDL.Nat, TaskStatus], [], []),
 });
 
@@ -149,6 +160,10 @@ export const idlFactory = ({ IDL }) => {
     'taskId' : IDL.Nat,
     'completionTimestamp' : IDL.Int,
   });
+  const TaskPauseState = IDL.Record({
+    'pausedAt' : IDL.Text,
+    'unpausedAt' : IDL.Text,
+  });
   
   return IDL.Service({
     '_initializeAccessControlWithSecret' : IDL.Func([IDL.Text], [], []),
@@ -184,6 +199,11 @@ export const idlFactory = ({ IDL }) => {
         [IDL.Vec(IDL.Tuple(IDL.Text, IDL.Int))],
         ['query'],
       ),
+    'getTaskPauseStates' : IDL.Func(
+        [],
+        [IDL.Vec(IDL.Tuple(IDL.Nat, TaskPauseState))],
+        ['query'],
+      ),
     'getTasksByEmployee' : IDL.Func(
         [IDL.Principal],
         [IDL.Vec(Task)],
@@ -197,8 +217,10 @@ export const idlFactory = ({ IDL }) => {
     'hasAnyAdmin' : IDL.Func([], [IDL.Bool], ['query']),
     'isCallerAdmin' : IDL.Func([], [IDL.Bool], ['query']),
     'markTaskInstanceDone' : IDL.Func([IDL.Nat, IDL.Text], [], []),
+    'pauseTask' : IDL.Func([IDL.Nat], [], []),
     'saveCallerUserProfile' : IDL.Func([UserProfile], [], []),
     'unmarkTaskInstanceDone' : IDL.Func([IDL.Nat, IDL.Text], [], []),
+    'unpauseTask' : IDL.Func([IDL.Nat], [], []),
     'updateTaskStatus' : IDL.Func([IDL.Nat, TaskStatus], [], []),
   });
 };

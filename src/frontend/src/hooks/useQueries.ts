@@ -4,12 +4,13 @@ import { FrequencyType, Priority, TaskStatus, UserRole } from "../backend.d";
 import type {
   CompletionDate,
   Task,
+  TaskPauseState,
   UserProfile,
   UserProfileEntry,
 } from "../backend.d";
 import { useActor } from "./useActor";
 
-export type { Task, UserProfile, UserProfileEntry };
+export type { Task, TaskPauseState, UserProfile, UserProfileEntry };
 export { FrequencyType, Priority, TaskStatus, UserRole };
 
 export interface DashboardStats {
@@ -182,6 +183,47 @@ export function useTaskInstanceCompletions() {
   });
 }
 
+export function useTaskPauseStates() {
+  const { actor, isFetching } = useActor();
+  return useQuery<Map<string, TaskPauseState>>({
+    queryKey: ["taskPauseStates"],
+    queryFn: async () => {
+      if (!actor) return new Map<string, TaskPauseState>();
+      const entries = await actor.getTaskPauseStates();
+      return new Map(entries.map(([k, v]) => [k.toString(), v]));
+    },
+    enabled: !!actor && !isFetching,
+  });
+}
+
+export function usePauseTask() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (taskId: bigint) => {
+      if (!actor) throw new Error("No actor");
+      return actor.pauseTask(taskId);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["taskPauseStates"] });
+    },
+  });
+}
+
+export function useUnpauseTask() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (taskId: bigint) => {
+      if (!actor) throw new Error("No actor");
+      return actor.unpauseTask(taskId);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["taskPauseStates"] });
+    },
+  });
+}
+
 export function useMarkTaskInstanceDone() {
   const { actor } = useActor();
   const queryClient = useQueryClient();
@@ -197,6 +239,25 @@ export function useMarkTaskInstanceDone() {
       queryClient.invalidateQueries({ queryKey: ["taskInstanceCompletions"] });
       queryClient.invalidateQueries({ queryKey: ["myTasks"] });
       queryClient.invalidateQueries({ queryKey: ["allTasks"] });
+    },
+  });
+}
+
+export function useMarkTaskInstanceDoneAdmin() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      taskId,
+      targetDate,
+    }: { taskId: bigint; targetDate: string }) => {
+      if (!actor) throw new Error("No actor");
+      return actor.markTaskInstanceDone(taskId, targetDate);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["taskInstanceCompletions"] });
+      queryClient.invalidateQueries({ queryKey: ["allTasks"] });
+      queryClient.invalidateQueries({ queryKey: ["myTasks"] });
     },
   });
 }

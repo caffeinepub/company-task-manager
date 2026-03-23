@@ -114,6 +114,10 @@ export interface UserProfile {
     name: string;
     email: string;
 }
+export interface TaskPauseState {
+    pausedAt: string;
+    unpausedAt: string;
+}
 export enum FrequencyType {
     none = "none",
     monthly = "monthly",
@@ -152,13 +156,16 @@ export interface backendInterface {
     getMyTasks(): Promise<Array<Task>>;
     getTask(taskId: bigint): Promise<Task | null>;
     getTaskInstanceCompletions(): Promise<Array<[string, bigint]>>;
+    getTaskPauseStates(): Promise<Array<[bigint, TaskPauseState]>>;
     getTasksByEmployee(employee: Principal): Promise<Array<Task>>;
     getUserProfile(userPrincipal: Principal): Promise<UserProfile | null>;
     hasAnyAdmin(): Promise<boolean>;
     isCallerAdmin(): Promise<boolean>;
     markTaskInstanceDone(taskId: bigint, targetDate: string): Promise<void>;
+    pauseTask(taskId: bigint): Promise<void>;
     saveCallerUserProfile(profile: UserProfile): Promise<void>;
     unmarkTaskInstanceDone(taskId: bigint, targetDate: string): Promise<void>;
+    unpauseTask(taskId: bigint): Promise<void>;
     updateTaskStatus(taskId: bigint, newStatus: TaskStatus): Promise<void>;
 }
 import type { FrequencyType as _FrequencyType, Priority as _Priority, Task as _Task, TaskStatus as _TaskStatus, UserProfile as _UserProfile, UserRole as _UserRole } from "./declarations/backend.did.d.ts";
@@ -396,6 +403,20 @@ export class Backend implements backendInterface {
             return result;
         }
     }
+    async getTaskPauseStates(): Promise<Array<[bigint, TaskPauseState]>> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getTaskPauseStates();
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getTaskPauseStates();
+            return result;
+        }
+    }
     async getTasksByEmployee(arg0: Principal): Promise<Array<Task>> {
         if (this.processError) {
             try {
@@ -466,6 +487,20 @@ export class Backend implements backendInterface {
             return result;
         }
     }
+    async pauseTask(arg0: bigint): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.pauseTask(arg0);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.pauseTask(arg0);
+            return result;
+        }
+    }
     async saveCallerUserProfile(arg0: UserProfile): Promise<void> {
         if (this.processError) {
             try {
@@ -491,6 +526,20 @@ export class Backend implements backendInterface {
             }
         } else {
             const result = await this.actor.unmarkTaskInstanceDone(arg0, arg1);
+            return result;
+        }
+    }
+    async unpauseTask(arg0: bigint): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.unpauseTask(arg0);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.unpauseTask(arg0);
             return result;
         }
     }

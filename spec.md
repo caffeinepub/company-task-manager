@@ -1,36 +1,43 @@
-# Company Task Manager
+# Company Task Manager - Phase 2 Updates
 
 ## Current State
-- React + Motoko task management app with role-based access (Admin, Employee, Guest)
-- All Tasks page: filter by task name and date range, delete tasks
-- Dashboard: Pending/Completed stat cards, Assignee Task List, recent pending task list
-- Performance Dashboard: per-employee OnTime/Delayed/Pending analytics with date range filter
-- Tasks have: title, description, assignee, targetDate, priority, status, frequency, frequencyDays, department
-- Daily tasks use rollover logic (expandAllTaskInstances) to generate one instance per day
-- taskInstanceCompletions map tracks which daily instances are done
+- Pause functionality exists but uses localStorage (not persistent across sessions/devices) and is limited to 5-day period
+- No "Employee Tasks" section
+- Tracking report does not exclude paused periods
+- Pause UI shows "Paused until [date]" badge
 
 ## Requested Changes (Diff)
 
 ### Add
-- **Pause functionality** (frontend/localStorage): Pause button on each row in All Tasks. When paused, task is hidden from Dashboard pending list and My Tasks active list from tomorrow for 5 days. Paused state stored in localStorage as `{taskId: string, pausedUntil: string (YYYY-MM-DD, +5 days from pause date)}`. Paused tasks still appear in Performance Dashboard and Tracking Report (not filtered out there).
-- **usePausedTasks hook**: manages localStorage read/write for paused tasks; exposes `pauseTask(taskId)`, `unpauseTask(taskId)`, `isPaused(taskId)`, `pausedUntil(taskId)` helpers.
-- **Assignee search** in All Tasks: add a second search input "Search by Assignee" next to existing task-name search. Requires fetching userProfiles to map principal -> name, then filtering tasks whose assignee name matches the query. Real-time with 300ms debounce.
-- **Total Tasks section** in Dashboard (admin only): stat cards showing Active (pending not paused), Paused, Completed total counts, and Total (sum of all).
-- **Department section** in Dashboard (admin only): card showing per-department breakdown - how many tasks are pending vs completed per department. Departments come from unique department values in allTasks.
-- **Department section** in Performance Dashboard (admin only): card showing per-department performance aggregated across all employees - OnTime/Delayed/Pending counts per department.
+- Backend stable map `taskPauseState` mapping taskId -> {pausedAt: Text, unpausedAt: ?Text}
+- Backend `pauseTask(taskId)` and `unpauseTask(taskId)` functions (admin only)
+- Backend `getTaskPauseStates()` query function
+- New frontend page: "Employee Tasks" (admin-only)
+  - Shows ALL pending task instances across all employees
+  - Assignee search bar with debounce (300ms)
+  - Admin can mark any instance as Done
+  - Role-based: hidden from sidebar and inaccessible for non-admins
+- Route `/employee-tasks` and sidebar nav item (admin-only)
 
 ### Modify
-- **AllTasksPage**: add Pause/Resume button column, add assignee name search input with debounce, show Paused badge in Status column if task is paused.
-- **DashboardPage**: add Total Tasks section above existing stat cards, add Department section below Assignee Task List. Filter paused tasks out of pending instances for the main list and pending count.
-- **PerformancePage**: add Department Performance section at the bottom when no employee is selected (or always visible for admin).
-- **expandAllTaskInstances** (or consumer): accept optional set of paused task IDs and filter them from pendingInstances.
+- `usePausedTasks.ts`: Replace localStorage with backend-stored pause state
+  - `pauseTask`: records pausedAt=today, unpausedAt=null
+  - `unpauseTask`: records unpausedAt=today (task resumes from unpause date)
+  - Pause is indefinite until manually unpaused
+- `AllTasksPage.tsx`: Update pause button tooltip/label to "Paused indefinitely until resumed"
+- `taskInstances.ts`: In `expandAllTaskInstances`, skip instances whose targetDate falls within a pause period (pausedAt <= targetDate < unpausedAt, or pausedAt <= targetDate if no unpausedAt)
+- `EmployeePanelPage.tsx` (tracking CSV export): exclude paused periods from tracking rows
+- Sidebar: Add "Employee Tasks" nav item (admin-only)
 
 ### Remove
-- Nothing removed.
+- localStorage-based pause storage (replace with backend)
 
 ## Implementation Plan
-1. Create `src/frontend/src/hooks/usePausedTasks.ts` - localStorage hook for pause state
-2. Update `src/frontend/src/utils/taskInstances.ts` - accept pausedTaskIds param, filter paused tasks from pending
-3. Update `AllTasksPage.tsx` - add Pause/Resume button, assignee name filter with debounce, Paused status badge
-4. Update `DashboardPage.tsx` - add Total Tasks stat section, add Department breakdown section, pass paused IDs to instance expansion
-5. Update `PerformancePage.tsx` - add Department Performance section
+1. Update `main.mo`: add taskPauseState map, pauseTask/unpauseTask/getTaskPauseStates functions
+2. Regenerate `backend.d.ts` via Motoko codegen
+3. Rewrite `usePausedTasks.ts` to use backend API
+4. Update `taskInstances.ts` to accept pauseState map and exclude paused periods
+5. Create `EmployeeTasksPage.tsx`: admin-only pending tasks across all employees, assignee search, mark done
+6. Update `App.tsx` route tree and `AppLayout.tsx` sidebar nav
+7. Update `AllTasksPage.tsx` pause button UX
+8. Update tracking CSV logic to exclude paused instance dates

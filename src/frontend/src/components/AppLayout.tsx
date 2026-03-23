@@ -3,6 +3,7 @@ import { Link, useLocation } from "@tanstack/react-router";
 import {
   BarChart2,
   Building2,
+  CheckSquare,
   ClipboardList,
   LayoutDashboard,
   ListTodo,
@@ -49,6 +50,12 @@ const navItems: NavItem[] = [
     label: "Employee Panel",
     to: "/employee-panel",
     icon: <Users size={18} />,
+    adminOnly: true,
+  },
+  {
+    label: "Employee Tasks",
+    to: "/employee-tasks",
+    icon: <CheckSquare size={18} />,
     adminOnly: true,
   },
   {

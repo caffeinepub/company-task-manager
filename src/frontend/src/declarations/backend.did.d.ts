@@ -34,6 +34,7 @@ export interface Task {
   'frequency' : FrequencyType,
   'department' : string,
 }
+export interface TaskPauseState { 'pausedAt' : string, 'unpausedAt' : string }
 export type TaskStatus = { 'done' : null } |
   { 'todo' : null } |
   { 'inProgress' : null };
@@ -74,13 +75,16 @@ export interface _SERVICE {
   'getMyTasks' : ActorMethod<[], Array<Task>>,
   'getTask' : ActorMethod<[bigint], [] | [Task]>,
   'getTaskInstanceCompletions' : ActorMethod<[], Array<[string, bigint]>>,
+  'getTaskPauseStates' : ActorMethod<[], Array<[bigint, TaskPauseState]>>,
   'getTasksByEmployee' : ActorMethod<[Principal], Array<Task>>,
   'getUserProfile' : ActorMethod<[Principal], [] | [UserProfile]>,
   'hasAnyAdmin' : ActorMethod<[], boolean>,
   'isCallerAdmin' : ActorMethod<[], boolean>,
   'markTaskInstanceDone' : ActorMethod<[bigint, string], undefined>,
+  'pauseTask' : ActorMethod<[bigint], undefined>,
   'saveCallerUserProfile' : ActorMethod<[UserProfile], undefined>,
   'unmarkTaskInstanceDone' : ActorMethod<[bigint, string], undefined>,
+  'unpauseTask' : ActorMethod<[bigint], undefined>,
   'updateTaskStatus' : ActorMethod<[bigint, TaskStatus], undefined>,
 }
 export declare const idlService: IDL.ServiceClass;

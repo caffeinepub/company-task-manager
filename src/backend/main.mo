@@ -7,10 +7,8 @@ import Iter "mo:core/Iter";
 import Runtime "mo:core/Runtime";
 import Nat "mo:core/Nat";
 
-
 import MixinAuthorization "authorization/MixinAuthorization";
 import AccessControl "authorization/access-control";
-
 
 actor {
   stable let accessControlState = AccessControl.initState();
@@ -32,13 +30,12 @@ actor {
     };
   };
 
-  private func countPermanentAdmins() : Nat {
-    var count = 0;
-    for ((_, v) in adminPrincipals.entries()) {
-      if (v) { count += 1 };
-    };
-    count;
+  // Task pause state type and map
+  public type TaskPauseState = {
+    pausedAt : Text;
+    unpausedAt : Text;
   };
+  stable let taskPauseState = Map.empty<Nat, TaskPauseState>(); // Changed to stable
 
   public type Priority = {
     #low;
@@ -85,7 +82,6 @@ actor {
     frequencyDays : Text;
   };
 
-  // V3 (has frequency + department)
   public type Task = {
     id : Nat;
     title : Text;
@@ -173,10 +169,12 @@ actor {
   };
 
   private func countAdmins() : Nat {
-    let permanent = countPermanentAdmins();
-    if (permanent > 0) { return permanent };
-    // fallback to MixinAuthorization count
     var count = 0;
+    for ((_, v) in adminPrincipals.entries()) {
+      if (v) { count += 1 };
+    };
+    if (count > 0) { return count };
+    // fallback to MixinAuthorization count
     for ((_, role) in accessControlState.userRoles.entries()) {
       switch (role) {
         case (#admin) { count += 1 };
@@ -191,8 +189,11 @@ actor {
     if (caller.isAnonymous()) {
       Runtime.trap("Unauthorized: Anonymous principals cannot claim admin");
     };
-    let permanentCount = countPermanentAdmins();
-    if (permanentCount > 0) {
+    var count = 0;
+    for ((_, v) in adminPrincipals.entries()) {
+      if (v) { count += 1 };
+    };
+    if (count > 0) {
       if (isAdminPrincipal(caller)) { return true };
       return false;
     };
@@ -371,14 +372,11 @@ actor {
     var todoCount = 0;
     var inProgressCount = 0;
     var doneCount = 0;
-    let isAdminCaller = isAdminPrincipal(caller);
     for (task in tasksV3.values()) {
-      if (isAdminCaller or task.assignee == caller) {
-        switch (task.status) {
-          case (#todo) { todoCount += 1 };
-          case (#inProgress) { inProgressCount += 1 };
-          case (#done) { doneCount += 1 };
-        };
+      switch (task.status) {
+        case (#todo) { todoCount += 1 };
+        case (#inProgress) { inProgressCount += 1 };
+        case (#done) { doneCount += 1 };
       };
     };
     (todoCount, inProgressCount, doneCount);
@@ -415,29 +413,52 @@ actor {
     if (caller.isAnonymous()) {
       Runtime.trap("Unauthorized: must be logged in");
     };
-    
-    let isAdminCaller = isAdminPrincipal(caller);
-    
-    if (isAdminCaller) {
-      return taskInstanceCompletions.entries().toArray();
+    taskInstanceCompletions.entries().toArray();
+  };
+
+  public shared ({ caller }) func pauseTask(taskId : Nat) : async () {
+    if (not isAdminPrincipal(caller)) {
+      Runtime.trap("Unauthorized: Only admins can pause task");
     };
-    
-    taskInstanceCompletions.entries().filter(func((key, timestamp)) {
-      let parts = key.split(#char '_');
-      switch (parts.next()) {
-        case (?taskIdText) {
-          switch (Nat.fromText(taskIdText)) {
-            case (?taskId) {
-              switch (tasksV3.get(taskId)) {
-                case (?task) { task.assignee == caller };
-                case (null) { false };
-              };
-            };
-            case (null) { false };
-          };
+    switch (tasksV3.get(taskId)) {
+      case (null) { Runtime.trap("Task not found") };
+      case (_) {
+        let pauseState : TaskPauseState = {
+          pausedAt = Time.now().toText();
+          unpausedAt = "";
         };
-        case (null) { false };
+        taskPauseState.add(taskId, pauseState);
       };
-    }).toArray();
+    };
+  };
+
+  public shared ({ caller }) func unpauseTask(taskId : Nat) : async () {
+    if (not isAdminPrincipal(caller)) {
+      Runtime.trap("Unauthorized: Only admins can unpause task");
+    };
+    switch (tasksV3.get(taskId)) {
+      case (null) { Runtime.trap("Task not found") };
+      case (_) {
+        let existingPauseState = switch (taskPauseState.get(taskId)) {
+          case (null) { Runtime.trap("Task is not currently paused") };
+          case (?state) { state };
+        };
+        if (existingPauseState.pausedAt == "" or existingPauseState.unpausedAt != "") {
+          Runtime.trap("Task is not currently paused");
+        };
+        let updatedState = {
+          pausedAt = existingPauseState.pausedAt;
+          unpausedAt = Time.now().toText();
+        };
+        taskPauseState.add(taskId, updatedState);
+      };
+    };
+  };
+
+  public query ({ caller }) func getTaskPauseStates() : async [(Nat, TaskPauseState)] {
+    if (not isAdminPrincipal(caller)) {
+      Runtime.trap("Unauthorized: Only admins can view task pause states");
+    };
+    taskPauseState.entries().toArray();
   };
 };

@@ -12,13 +12,14 @@ import {
 import { Download, Loader2, Users } from "lucide-react";
 import { useState } from "react";
 import { FrequencyType, Priority, TaskStatus } from "../backend.d";
-import type { Task, UserProfileEntry } from "../backend.d";
+import type { Task, TaskPauseState, UserProfileEntry } from "../backend.d";
 import {
   useAllTasks,
   useAllUserProfiles,
   useCompletionDates,
   useIsAdmin,
   useTaskInstanceCompletions,
+  useTaskPauseStates,
   useTasksByEmployee,
 } from "../hooks/useQueries";
 import type { TaskInstance } from "../utils/taskInstances";
@@ -106,6 +107,7 @@ function buildTrackingRows(
   allTasks: Task[],
   instanceCompletions: Map<string, bigint>,
   filterPrincipal?: string,
+  pauseStateMap?: Map<string, TaskPauseState>,
 ): string[][] {
   const rows: string[][] = [];
 
@@ -124,6 +126,8 @@ function buildTrackingRows(
     const { pendingInstances, doneInstances } = expandAllTaskInstances(
       employeeTasks,
       instanceCompletions,
+      undefined,
+      pauseStateMap,
     );
     const allInsts = [...pendingInstances, ...doneInstances];
 
@@ -148,7 +152,6 @@ function buildTrackingRows(
   }
 
   rows.sort((a, b) => {
-    // a[0] and b[0] are DD-MM-YYYY, convert to YYYY-MM-DD for sorting
     const toSortable = (dd: string) => {
       const [d, m, y] = dd.split("-");
       return `${y}-${m}-${d}`;
@@ -254,14 +257,17 @@ function EmployeeTaskView({
   const { data: instanceCompletions = new Map<string, bigint>() } =
     useTaskInstanceCompletions();
   const { data: allProfiles = [] } = useAllUserProfiles();
+  const { data: pauseStates = new Map<string, TaskPauseState>() } =
+    useTaskPauseStates();
   const today = getTodayString();
   const todayTasks = tasks.filter((t) => t.targetDate === today);
   const employeeName = entry.profile.name || principalText;
 
-  // For daily tasks, expand instances for the task view
   const { pendingInstances, doneInstances } = expandAllTaskInstances(
     tasks,
     instanceCompletions,
+    undefined,
+    pauseStates,
   );
   const allInstances = [...pendingInstances, ...doneInstances];
 
@@ -288,6 +294,7 @@ function EmployeeTaskView({
       tasks,
       instanceCompletions,
       principalText,
+      pauseStates,
     );
     downloadCSV(
       `task_tracking_${employeeName}.csv`,
@@ -548,6 +555,8 @@ function ExportAllEmployeesCompletedButton({
     useCompletionDates();
   const { data: instanceCompletions = new Map<string, bigint>() } =
     useTaskInstanceCompletions();
+  const { data: pauseStates = new Map<string, TaskPauseState>() } =
+    useTaskPauseStates();
 
   function handleExportAllCompleted() {
     const nameMap = new Map<string, string>();
@@ -622,11 +631,12 @@ function ExportAllEmployeesCompletedButton({
       const { pendingInstances, doneInstances } = expandAllTaskInstances(
         employeeTasks,
         instanceCompletions,
+        undefined,
+        pauseStates,
       );
       const allInsts = [...pendingInstances, ...doneInstances];
       if (allInsts.length === 0) continue;
 
-      // Separator row
       rows.push([
         `--- ${employeeName} ---`,
         "",
@@ -666,7 +676,13 @@ function ExportAllEmployeesCompletedButton({
   }
 
   function handleExportTrackingReport() {
-    const rows = buildTrackingRows(profiles, allTasks, instanceCompletions);
+    const rows = buildTrackingRows(
+      profiles,
+      allTasks,
+      instanceCompletions,
+      undefined,
+      pauseStates,
+    );
     if (rows.length === 0) return;
     downloadCSV("task_tracking_report.csv", rows, TRACKING_CSV_HEADERS);
   }
