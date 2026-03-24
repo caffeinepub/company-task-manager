@@ -29,7 +29,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { format, isWithinInterval, parseISO } from "date-fns";
+import { format, isWithinInterval, parseISO, subDays } from "date-fns";
 import {
   CalendarIcon,
   ClipboardList,
@@ -40,10 +40,12 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { FrequencyType, Priority, TaskStatus } from "../backend.d";
 import type { Task } from "../backend.d";
+import PaginationControls from "../components/PaginationControls";
+import { usePagination } from "../hooks/usePagination";
 import {
   useAllTasks,
   useAllUserProfiles,
@@ -90,10 +92,7 @@ function PriorityBadge({ priority }: { priority: Priority }) {
 function StatusBadge({
   status,
   paused,
-}: {
-  status: TaskStatus;
-  paused: boolean;
-}) {
+}: { status: TaskStatus; paused: boolean }) {
   const map: Record<TaskStatus, { label: string; className: string }> = {
     [TaskStatus.todo]: {
       label: "Todo",
@@ -114,7 +113,7 @@ function StatusBadge({
       <Badge className={`${className} text-xs font-medium`}>{label}</Badge>
       {paused && (
         <Badge className="bg-amber-100 text-amber-700 border-amber-200 text-xs font-medium">
-          Paused (indefinitely)
+          Paused
         </Badge>
       )}
     </div>
@@ -139,11 +138,7 @@ function PauseButton({
       variant="ghost"
       size="icon"
       disabled={isLoading}
-      className={`h-8 w-8 ${
-        isPaused
-          ? "text-amber-500 hover:bg-amber-50"
-          : "text-muted-foreground hover:bg-muted"
-      }`}
+      className={`h-8 w-8 ${isPaused ? "text-amber-500 hover:bg-amber-50" : "text-muted-foreground hover:bg-muted"}`}
       title={isPaused ? "Resume task" : "Pause task indefinitely"}
       data-ocid={`all_tasks.toggle.${index + 1}`}
       onClick={() => (isPaused ? onResume() : onPause())}
@@ -196,6 +191,10 @@ function DeleteButton({ task, index }: { task: Task; index: number }) {
   );
 }
 
+function defaultStartDate() {
+  return subDays(new Date(), 30);
+}
+
 export default function AllTasksPage() {
   const { data: isAdmin, isLoading: isAdminLoading } = useIsAdmin();
   const { data: tasks, isLoading } = useAllTasks();
@@ -208,33 +207,92 @@ export default function AllTasksPage() {
   const [nameFilter, setNameFilter] = useState("");
   const [assigneeFilter, setAssigneeFilter] = useState("");
   const [debouncedAssignee, setDebouncedAssignee] = useState("");
-  const [startDate, setStartDate] = useState<Date | undefined>(undefined);
+  const [startDate, setStartDate] = useState<Date | undefined>(
+    defaultStartDate,
+  );
   const [endDate, setEndDate] = useState<Date | undefined>(undefined);
   const [startOpen, setStartOpen] = useState(false);
   const [endOpen, setEndOpen] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Build a map: principal string -> name
-  const profileMap = new Map<string, string>();
-  for (const entry of profileEntries) {
-    profileMap.set(entry.principal.toString(), entry.profile.name);
-  }
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(
+      () => setDebouncedAssignee(assigneeFilter),
+      300,
+    );
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [assigneeFilter]);
 
   const isPaused = (taskIdStr: string): boolean => {
     const state = pauseStates.get(taskIdStr);
     return !!state && state.pausedAt !== "" && state.unpausedAt === "";
   };
 
-  // Debounce assignee filter
-  useEffect(() => {
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => {
-      setDebouncedAssignee(assigneeFilter);
-    }, 300);
-    return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-    };
-  }, [assigneeFilter]);
+  const filteredTasks = useMemo(() => {
+    const profileMap = new Map<string, string>();
+    for (const entry of profileEntries) {
+      profileMap.set(entry.principal.toString(), entry.profile.name);
+    }
+    return (tasks ?? []).filter((task) => {
+      if (nameFilter.trim()) {
+        if (!task.title.toLowerCase().includes(nameFilter.trim().toLowerCase()))
+          return false;
+      }
+      if (debouncedAssignee.trim()) {
+        const assigneeName = profileMap.get(task.assignee.toString()) ?? "";
+        if (
+          !assigneeName
+            .toLowerCase()
+            .includes(debouncedAssignee.trim().toLowerCase())
+        )
+          return false;
+      }
+      if (startDate || endDate) {
+        if (!task.targetDate) return false;
+        try {
+          const taskDate = parseISO(task.targetDate);
+          if (startDate && endDate) {
+            if (!isWithinInterval(taskDate, { start: startDate, end: endDate }))
+              return false;
+          } else if (startDate) {
+            if (taskDate < startDate) return false;
+          } else if (endDate) {
+            if (taskDate > endDate) return false;
+          }
+        } catch {
+          return false;
+        }
+      }
+      return true;
+    });
+  }, [
+    tasks,
+    nameFilter,
+    debouncedAssignee,
+    startDate,
+    endDate,
+    profileEntries,
+  ]);
+
+  const pagination = usePagination(filteredTasks, 20);
+
+  const clearFilters = () => {
+    setNameFilter("");
+    setAssigneeFilter("");
+    setDebouncedAssignee("");
+    setStartDate(defaultStartDate());
+    setEndDate(undefined);
+  };
+
+  const hasCustomFilters =
+    nameFilter.trim() ||
+    assigneeFilter.trim() ||
+    endDate ||
+    (startDate &&
+      Math.abs(startDate.getTime() - defaultStartDate().getTime()) > 86400000);
 
   if (isAdminLoading) {
     return (
@@ -258,45 +316,10 @@ export default function AllTasksPage() {
     );
   }
 
-  const filteredTasks = (tasks ?? []).filter((task) => {
-    if (nameFilter.trim()) {
-      const q = nameFilter.trim().toLowerCase();
-      if (!task.title.toLowerCase().includes(q)) return false;
-    }
-    if (debouncedAssignee.trim()) {
-      const q = debouncedAssignee.trim().toLowerCase();
-      const assigneeName = profileMap.get(task.assignee.toString()) ?? "";
-      if (!assigneeName.toLowerCase().includes(q)) return false;
-    }
-    if (startDate || endDate) {
-      if (!task.targetDate) return false;
-      try {
-        const taskDate = parseISO(task.targetDate);
-        if (startDate && endDate) {
-          if (!isWithinInterval(taskDate, { start: startDate, end: endDate }))
-            return false;
-        } else if (startDate) {
-          if (taskDate < startDate) return false;
-        } else if (endDate) {
-          if (taskDate > endDate) return false;
-        }
-      } catch {
-        return false;
-      }
-    }
-    return true;
-  });
-
-  const clearFilters = () => {
-    setNameFilter("");
-    setAssigneeFilter("");
-    setDebouncedAssignee("");
-    setStartDate(undefined);
-    setEndDate(undefined);
-  };
-
-  const hasFilters =
-    nameFilter.trim() || assigneeFilter.trim() || startDate || endDate;
+  const profileMapDisplay = new Map<string, string>();
+  for (const entry of profileEntries) {
+    profileMapDisplay.set(entry.principal.toString(), entry.profile.name);
+  }
 
   return (
     <div className="max-w-6xl mx-auto space-y-5 animate-fade-up">
@@ -306,11 +329,15 @@ export default function AllTasksPage() {
           All Tasks
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
-          {filteredTasks.length} of {tasks?.length ?? 0} tasks
+          Showing {filteredTasks.length} of {tasks?.length ?? 0} tasks
+          {startDate && (
+            <span className="ml-1 text-xs">
+              (from {format(startDate, "dd MMM yyyy")})
+            </span>
+          )}
         </p>
       </div>
 
-      {/* Filters */}
       <Card className="shadow-card">
         <CardContent className="p-4">
           <div className="flex flex-col sm:flex-row gap-3 items-end flex-wrap">
@@ -332,7 +359,6 @@ export default function AllTasksPage() {
                 />
               </div>
             </div>
-
             <div className="flex-1 min-w-[160px] space-y-1">
               <Label className="text-xs text-muted-foreground">
                 Search by Assignee
@@ -347,11 +373,9 @@ export default function AllTasksPage() {
                   placeholder="Assignee name..."
                   value={assigneeFilter}
                   onChange={(e) => setAssigneeFilter(e.target.value)}
-                  data-ocid="all_tasks.search_input"
                 />
               </div>
             </div>
-
             <div className="space-y-1">
               <Label className="text-xs text-muted-foreground">From Date</Label>
               <Popover open={startOpen} onOpenChange={setStartOpen}>
@@ -384,7 +408,6 @@ export default function AllTasksPage() {
                 </PopoverContent>
               </Popover>
             </div>
-
             <div className="space-y-1">
               <Label className="text-xs text-muted-foreground">To Date</Label>
               <Popover open={endOpen} onOpenChange={setEndOpen}>
@@ -418,15 +441,14 @@ export default function AllTasksPage() {
                 </PopoverContent>
               </Popover>
             </div>
-
-            {hasFilters && (
+            {hasCustomFilters && (
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={clearFilters}
                 className="h-9 gap-1 text-muted-foreground hover:text-foreground"
               >
-                <X size={14} /> Clear
+                <X size={14} /> Reset
               </Button>
             )}
           </div>
@@ -451,112 +473,117 @@ export default function AllTasksPage() {
                 className="mx-auto mb-3 text-muted-foreground opacity-40"
               />
               <p className="text-sm text-muted-foreground">
-                {hasFilters
+                {nameFilter || assigneeFilter
                   ? "No tasks match your filters."
-                  : "No tasks created yet."}
+                  : "No tasks in this date range. Try expanding the date filter."}
               </p>
             </div>
           ) : (
-            <Table data-ocid="all_tasks.table">
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Title</TableHead>
-                  <TableHead className="hidden md:table-cell">
-                    Assignee
-                  </TableHead>
-                  <TableHead>Priority</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="hidden sm:table-cell">
-                    Target Date
-                  </TableHead>
-                  <TableHead className="hidden lg:table-cell">
-                    Frequency
-                  </TableHead>
-                  <TableHead className="hidden lg:table-cell">
-                    Department
-                  </TableHead>
-                  <TableHead className="w-20" />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredTasks.map((task, i) => {
-                  const taskIdStr = task.id.toString();
-                  const paused = isPaused(taskIdStr);
-                  const assigneeName =
-                    profileMap.get(task.assignee.toString()) ?? null;
-                  return (
-                    <TableRow
-                      key={taskIdStr}
-                      data-ocid={`all_tasks.row.${i + 1}`}
-                      className={paused ? "opacity-60" : ""}
-                    >
-                      <TableCell>
-                        <div>
-                          <p className="font-medium text-sm">{task.title}</p>
-                          <p className="text-xs text-muted-foreground line-clamp-1">
-                            {task.description}
-                          </p>
-                        </div>
-                      </TableCell>
-                      <TableCell className="hidden md:table-cell">
-                        {assigneeName ? (
-                          <span className="text-xs font-medium text-foreground">
-                            {assigneeName}
-                          </span>
-                        ) : (
-                          <span className="text-xs font-mono text-muted-foreground">
-                            {task.assignee.toString().slice(0, 12)}&hellip;
-                          </span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <PriorityBadge priority={task.priority} />
-                      </TableCell>
-                      <TableCell>
-                        <StatusBadge status={task.status} paused={paused} />
-                      </TableCell>
-                      <TableCell className="hidden sm:table-cell text-sm">
-                        {task.targetDate}
-                      </TableCell>
-                      <TableCell className="hidden lg:table-cell text-xs text-muted-foreground">
-                        {frequencyLabel(task)}
-                      </TableCell>
-                      <TableCell className="hidden lg:table-cell text-xs text-muted-foreground">
-                        {task.department || "-"}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-1">
-                          <PauseButton
-                            index={i}
-                            isPaused={paused}
-                            isLoading={
-                              pauseMutation.isPending ||
-                              unpauseMutation.isPending
-                            }
-                            onPause={() => {
-                              pauseMutation.mutate(task.id, {
-                                onSuccess: () =>
-                                  toast.success("Task paused indefinitely"),
-                                onError: () =>
-                                  toast.error("Failed to pause task"),
-                              });
-                            }}
-                            onResume={() => {
-                              unpauseMutation.mutate(task.id, {
-                                onSuccess: () => toast.success("Task resumed"),
-                                onError: () =>
-                                  toast.error("Failed to resume task"),
-                              });
-                            }}
-                          />
-                          <DeleteButton task={task} index={i} />
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
+            <>
+              <Table data-ocid="all_tasks.table">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Title</TableHead>
+                    <TableHead className="hidden md:table-cell">
+                      Assignee
+                    </TableHead>
+                    <TableHead>Priority</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="hidden sm:table-cell">
+                      Target Date
+                    </TableHead>
+                    <TableHead className="hidden lg:table-cell">
+                      Frequency
+                    </TableHead>
+                    <TableHead className="hidden lg:table-cell">
+                      Department
+                    </TableHead>
+                    <TableHead className="w-20" />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {pagination.pageItems.map((task, i) => {
+                    const taskIdStr = task.id.toString();
+                    const paused = isPaused(taskIdStr);
+                    const assigneeName =
+                      profileMapDisplay.get(task.assignee.toString()) ?? null;
+                    const globalIndex = pagination.startIndex + i;
+                    return (
+                      <TableRow
+                        key={taskIdStr}
+                        data-ocid={`all_tasks.row.${globalIndex + 1}`}
+                        className={paused ? "opacity-60" : ""}
+                      >
+                        <TableCell>
+                          <div>
+                            <p className="font-medium text-sm">{task.title}</p>
+                            <p className="text-xs text-muted-foreground line-clamp-1">
+                              {task.description}
+                            </p>
+                          </div>
+                        </TableCell>
+                        <TableCell className="hidden md:table-cell">
+                          {assigneeName ? (
+                            <span className="text-xs font-medium text-foreground">
+                              {assigneeName}
+                            </span>
+                          ) : (
+                            <span className="text-xs font-mono text-muted-foreground">
+                              {task.assignee.toString().slice(0, 12)}&hellip;
+                            </span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <PriorityBadge priority={task.priority} />
+                        </TableCell>
+                        <TableCell>
+                          <StatusBadge status={task.status} paused={paused} />
+                        </TableCell>
+                        <TableCell className="hidden sm:table-cell text-sm">
+                          {task.targetDate}
+                        </TableCell>
+                        <TableCell className="hidden lg:table-cell text-xs text-muted-foreground">
+                          {frequencyLabel(task)}
+                        </TableCell>
+                        <TableCell className="hidden lg:table-cell text-xs text-muted-foreground">
+                          {task.department || "-"}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1">
+                            <PauseButton
+                              index={globalIndex}
+                              isPaused={paused}
+                              isLoading={
+                                pauseMutation.isPending ||
+                                unpauseMutation.isPending
+                              }
+                              onPause={() =>
+                                pauseMutation.mutate(task.id, {
+                                  onSuccess: () =>
+                                    toast.success("Task paused indefinitely"),
+                                  onError: () =>
+                                    toast.error("Failed to pause task"),
+                                })
+                              }
+                              onResume={() =>
+                                unpauseMutation.mutate(task.id, {
+                                  onSuccess: () =>
+                                    toast.success("Task resumed"),
+                                  onError: () =>
+                                    toast.error("Failed to resume task"),
+                                })
+                              }
+                            />
+                            <DeleteButton task={task} index={globalIndex} />
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+              <PaginationControls {...pagination} label="tasks" />
+            </>
           )}
         </CardContent>
       </Card>

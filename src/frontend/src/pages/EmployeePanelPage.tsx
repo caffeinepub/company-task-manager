@@ -13,6 +13,8 @@ import { Download, Loader2, Users } from "lucide-react";
 import { useState } from "react";
 import { FrequencyType, Priority, TaskStatus } from "../backend.d";
 import type { Task, TaskPauseState, UserProfileEntry } from "../backend.d";
+import PaginationControls from "../components/PaginationControls";
+import { usePagination } from "../hooks/usePagination";
 import {
   useAllTasks,
   useAllUserProfiles,
@@ -390,7 +392,7 @@ function EmployeeTaskView({
         </CardContent>
       </Card>
 
-      {/* All Tasks (instance-expanded) */}
+      {/* All Tasks (instance-expanded) with pagination */}
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base">
@@ -400,9 +402,9 @@ function EmployeeTaskView({
             </Badge>
           </CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-0">
           {allInstances.length === 0 ? (
-            <p className="text-sm text-muted-foreground py-4 text-center">
+            <p className="text-sm text-muted-foreground py-4 text-center px-5">
               No tasks assigned.
             </p>
           ) : (
@@ -480,6 +482,8 @@ function TaskTable({
 }
 
 function InstanceTable({ instances }: { instances: TaskInstance[] }) {
+  const pagination = usePagination(instances, 20);
+
   return (
     <div className="overflow-x-auto">
       <Table>
@@ -495,7 +499,7 @@ function InstanceTable({ instances }: { instances: TaskInstance[] }) {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {instances.map((inst) => {
+          {pagination.pageItems.map((inst) => {
             const completedAt =
               inst.completedAt !== undefined
                 ? new Date(
@@ -541,6 +545,7 @@ function InstanceTable({ instances }: { instances: TaskInstance[] }) {
           })}
         </TableBody>
       </Table>
+      <PaginationControls {...pagination} label="instances" />
     </div>
   );
 }

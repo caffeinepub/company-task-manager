@@ -1,43 +1,30 @@
-# Company Task Manager - Phase 2 Updates
+# Company Task Manager
 
 ## Current State
-- Pause functionality exists but uses localStorage (not persistent across sessions/devices) and is limited to 5-day period
-- No "Employee Tasks" section
-- Tracking report does not exclude paused periods
-- Pause UI shows "Paused until [date]" badge
+The app loads all tasks at once from the backend and renders them without pagination. With 200 employees and 5000+ tasks (including daily rollover instances), this causes slow page loads, sluggish rendering, and potential CSV export timeouts.
 
 ## Requested Changes (Diff)
 
 ### Add
-- Backend stable map `taskPauseState` mapping taskId -> {pausedAt: Text, unpausedAt: ?Text}
-- Backend `pauseTask(taskId)` and `unpauseTask(taskId)` functions (admin only)
-- Backend `getTaskPauseStates()` query function
-- New frontend page: "Employee Tasks" (admin-only)
-  - Shows ALL pending task instances across all employees
-  - Assignee search bar with debounce (300ms)
-  - Admin can mark any instance as Done
-  - Role-based: hidden from sidebar and inaccessible for non-admins
-- Route `/employee-tasks` and sidebar nav item (admin-only)
+- Frontend pagination (20 rows per page) to AllTasksPage, EmployeePanelPage instance tables, and EmployeeTasksPage
+- Default date range filter in AllTasksPage (last 30 days by default, clearable)
+- Pagination to Dashboard AssigneeTaskList (show 8 employees per page with next/prev)
+- Pagination to PerformancePage detail table
+- Page size selector (20 / 50 / 100) on All Tasks and Employee Panel instance tables
 
 ### Modify
-- `usePausedTasks.ts`: Replace localStorage with backend-stored pause state
-  - `pauseTask`: records pausedAt=today, unpausedAt=null
-  - `unpauseTask`: records unpausedAt=today (task resumes from unpause date)
-  - Pause is indefinite until manually unpaused
-- `AllTasksPage.tsx`: Update pause button tooltip/label to "Paused indefinitely until resumed"
-- `taskInstances.ts`: In `expandAllTaskInstances`, skip instances whose targetDate falls within a pause period (pausedAt <= targetDate < unpausedAt, or pausedAt <= targetDate if no unpausedAt)
-- `EmployeePanelPage.tsx` (tracking CSV export): exclude paused periods from tracking rows
-- Sidebar: Add "Employee Tasks" nav item (admin-only)
+- AllTasksPage: default start date = 30 days ago, allow clearing
+- DashboardPage AssigneeTaskList: paginate employee cards (8 per page)
+- EmployeePanelPage InstanceTable: paginate with 20 rows per page
+- PerformancePage detail table: paginate with 20 rows per page
 
 ### Remove
-- localStorage-based pause storage (replace with backend)
+- Nothing removed
 
 ## Implementation Plan
-1. Update `main.mo`: add taskPauseState map, pauseTask/unpauseTask/getTaskPauseStates functions
-2. Regenerate `backend.d.ts` via Motoko codegen
-3. Rewrite `usePausedTasks.ts` to use backend API
-4. Update `taskInstances.ts` to accept pauseState map and exclude paused periods
-5. Create `EmployeeTasksPage.tsx`: admin-only pending tasks across all employees, assignee search, mark done
-6. Update `App.tsx` route tree and `AppLayout.tsx` sidebar nav
-7. Update `AllTasksPage.tsx` pause button UX
-8. Update tracking CSV logic to exclude paused instance dates
+1. Create reusable `usePagination` hook for offset-based pagination logic
+2. Update AllTasksPage: set default start date to 30 days ago; add pagination controls below the table
+3. Update DashboardPage AssigneeTaskList: paginate employee entries with prev/next buttons
+4. Update EmployeePanelPage InstanceTable: add pagination controls
+5. Update PerformancePage: paginate the detail table rows
+6. Update EmployeeTasksPage: add pagination to the tasks list

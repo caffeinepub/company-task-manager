@@ -12,10 +12,12 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { CheckSquare, Loader2, Search, Users } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { FrequencyType, Priority } from "../backend.d";
 import type { Task } from "../backend.d";
+import PaginationControls from "../components/PaginationControls";
+import { usePagination } from "../hooks/usePagination";
 import {
   useAllTasks,
   useAllUserProfiles,
@@ -86,7 +88,6 @@ export default function EmployeeTasksPage() {
     };
   }, [assigneeSearch]);
 
-  // Build profile map
   const profileMap = new Map<string, string>();
   for (const entry of profileEntries) {
     profileMap.set(entry.principal.toString(), entry.profile.name);
@@ -94,6 +95,41 @@ export default function EmployeeTasksPage() {
 
   const isDataLoading =
     tasksLoading || profilesLoading || completionsLoading || pauseLoading;
+
+  const { pendingInstances } = expandAllTaskInstances(
+    allTasks,
+    instanceCompletions,
+    undefined,
+    pauseStates,
+  );
+
+  const filteredInstances = useMemo(() => {
+    if (!debouncedSearch.trim()) return pendingInstances;
+    const pMap = new Map<string, string>();
+    for (const entry of profileEntries) {
+      pMap.set(entry.principal.toString(), entry.profile.name);
+    }
+    return pendingInstances.filter((inst) => {
+      const name = pMap.get(inst.task.assignee.toString()) ?? "";
+      return name.toLowerCase().includes(debouncedSearch.trim().toLowerCase());
+    });
+  }, [pendingInstances, debouncedSearch, profileEntries]);
+
+  const pagination = usePagination(filteredInstances, 20);
+
+  const handleMarkDone = (
+    taskId: bigint,
+    targetDate: string,
+    title: string,
+  ) => {
+    markDone.mutate(
+      { taskId, targetDate },
+      {
+        onSuccess: () => toast.success(`"${title}" marked as done`),
+        onError: () => toast.error("Failed to mark task done"),
+      },
+    );
+  };
 
   if (isAdminLoading) {
     return (
@@ -117,41 +153,8 @@ export default function EmployeeTasksPage() {
     );
   }
 
-  // Expand all tasks to pending instances (excluding paused periods)
-  const { pendingInstances } = expandAllTaskInstances(
-    allTasks,
-    instanceCompletions,
-    undefined,
-    pauseStates,
-  );
-
-  // Filter by assignee search
-  const filteredInstances = debouncedSearch.trim()
-    ? pendingInstances.filter((inst) => {
-        const name = profileMap.get(inst.task.assignee.toString()) ?? "";
-        return name
-          .toLowerCase()
-          .includes(debouncedSearch.trim().toLowerCase());
-      })
-    : pendingInstances;
-
-  const handleMarkDone = (
-    taskId: bigint,
-    targetDate: string,
-    title: string,
-  ) => {
-    markDone.mutate(
-      { taskId, targetDate },
-      {
-        onSuccess: () => toast.success(`"${title}" marked as done`),
-        onError: () => toast.error("Failed to mark task done"),
-      },
-    );
-  };
-
   return (
     <div className="max-w-6xl mx-auto space-y-5 animate-fade-up">
-      {/* Header */}
       <div>
         <h1 className="text-2xl font-bold flex items-center gap-2">
           <Users size={22} className="text-primary" />
@@ -162,7 +165,6 @@ export default function EmployeeTasksPage() {
         </p>
       </div>
 
-      {/* Search + Count */}
       <Card>
         <CardContent className="p-4">
           <div className="flex flex-col sm:flex-row gap-3 items-center justify-between">
@@ -190,7 +192,6 @@ export default function EmployeeTasksPage() {
         </CardContent>
       </Card>
 
-      {/* Table */}
       <Card>
         <CardContent className="p-0">
           {isDataLoading ? (
@@ -218,90 +219,95 @@ export default function EmployeeTasksPage() {
               </p>
             </div>
           ) : (
-            <Table data-ocid="employee_tasks.table">
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Task Name</TableHead>
-                  <TableHead>Assignee</TableHead>
-                  <TableHead>Target Date</TableHead>
-                  <TableHead>Priority</TableHead>
-                  <TableHead className="hidden md:table-cell">
-                    Frequency
-                  </TableHead>
-                  <TableHead className="hidden lg:table-cell">
-                    Department
-                  </TableHead>
-                  <TableHead className="w-28">Action</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredInstances.map((inst, i) => {
-                  const assigneeName =
-                    profileMap.get(inst.task.assignee.toString()) ?? null;
-                  const [y, m, d] = inst.targetDate.split("-");
-                  const displayDate = `${d}-${m}-${y}`;
-                  return (
-                    <TableRow
-                      key={inst.instanceKey}
-                      data-ocid={`employee_tasks.row.${i + 1}`}
-                    >
-                      <TableCell>
-                        <div>
-                          <p className="font-medium text-sm">
-                            {inst.task.title}
-                          </p>
-                          {inst.task.description && (
-                            <p className="text-xs text-muted-foreground line-clamp-1">
-                              {inst.task.description}
+            <>
+              <Table data-ocid="employee_tasks.table">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Task Name</TableHead>
+                    <TableHead>Assignee</TableHead>
+                    <TableHead>Target Date</TableHead>
+                    <TableHead>Priority</TableHead>
+                    <TableHead className="hidden md:table-cell">
+                      Frequency
+                    </TableHead>
+                    <TableHead className="hidden lg:table-cell">
+                      Department
+                    </TableHead>
+                    <TableHead className="w-28">Action</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {pagination.pageItems.map((inst, i) => {
+                    const assigneeName =
+                      profileMap.get(inst.task.assignee.toString()) ?? null;
+                    const [y, m, d] = inst.targetDate.split("-");
+                    const displayDate = `${d}-${m}-${y}`;
+                    const globalIndex = pagination.startIndex + i;
+                    return (
+                      <TableRow
+                        key={inst.instanceKey}
+                        data-ocid={`employee_tasks.row.${globalIndex + 1}`}
+                      >
+                        <TableCell>
+                          <div>
+                            <p className="font-medium text-sm">
+                              {inst.task.title}
                             </p>
+                            {inst.task.description && (
+                              <p className="text-xs text-muted-foreground line-clamp-1">
+                                {inst.task.description}
+                              </p>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          {assigneeName ? (
+                            <span className="text-xs font-medium text-foreground">
+                              {assigneeName}
+                            </span>
+                          ) : (
+                            <span className="text-xs font-mono text-muted-foreground">
+                              {inst.task.assignee.toString().slice(0, 12)}
+                              &hellip;
+                            </span>
                           )}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        {assigneeName ? (
-                          <span className="text-xs font-medium text-foreground">
-                            {assigneeName}
-                          </span>
-                        ) : (
-                          <span className="text-xs font-mono text-muted-foreground">
-                            {inst.task.assignee.toString().slice(0, 12)}&hellip;
-                          </span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-sm">{displayDate}</TableCell>
-                      <TableCell>
-                        <PriorityBadge priority={inst.task.priority} />
-                      </TableCell>
-                      <TableCell className="hidden md:table-cell text-xs text-muted-foreground">
-                        {frequencyLabel(inst.task)}
-                      </TableCell>
-                      <TableCell className="hidden lg:table-cell text-xs text-muted-foreground">
-                        {inst.task.department || "-"}
-                      </TableCell>
-                      <TableCell>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-7 text-xs gap-1 text-green-700 border-green-200 hover:bg-green-50"
-                          disabled={markDone.isPending}
-                          onClick={() =>
-                            handleMarkDone(
-                              inst.task.id,
-                              inst.targetDate,
-                              inst.task.title,
-                            )
-                          }
-                          data-ocid={`employee_tasks.primary_button.${i + 1}`}
-                        >
-                          <CheckSquare size={12} />
-                          Mark Done
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
+                        </TableCell>
+                        <TableCell className="text-sm">{displayDate}</TableCell>
+                        <TableCell>
+                          <PriorityBadge priority={inst.task.priority} />
+                        </TableCell>
+                        <TableCell className="hidden md:table-cell text-xs text-muted-foreground">
+                          {frequencyLabel(inst.task)}
+                        </TableCell>
+                        <TableCell className="hidden lg:table-cell text-xs text-muted-foreground">
+                          {inst.task.department || "-"}
+                        </TableCell>
+                        <TableCell>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 text-xs gap-1 text-green-700 border-green-200 hover:bg-green-50"
+                            disabled={markDone.isPending}
+                            onClick={() =>
+                              handleMarkDone(
+                                inst.task.id,
+                                inst.targetDate,
+                                inst.task.title,
+                              )
+                            }
+                            data-ocid={`employee_tasks.primary_button.${globalIndex + 1}`}
+                          >
+                            <CheckSquare size={12} />
+                            Mark Done
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+              <PaginationControls {...pagination} label="tasks" />
+            </>
           )}
         </CardContent>
       </Card>

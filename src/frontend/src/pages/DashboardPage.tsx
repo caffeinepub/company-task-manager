@@ -22,6 +22,8 @@ import {
 import { motion } from "motion/react";
 import { Priority } from "../backend.d";
 import type { Task } from "../backend.d";
+import PaginationControls from "../components/PaginationControls";
+import { usePagination } from "../hooks/usePagination";
 import { usePausedTasks } from "../hooks/usePausedTasks";
 import {
   useAllTasks,
@@ -168,7 +170,6 @@ function DepartmentSection({
   doneInstances: TaskInstance[];
   loading: boolean;
 }) {
-  // Group by department
   const deptMap = new Map<string, { pending: number; completed: number }>();
 
   const getDept = (inst: TaskInstance) =>
@@ -316,6 +317,8 @@ function AssigneeTaskList({
     return nameA.localeCompare(nameB);
   });
 
+  const pagination = usePagination(entries, 8);
+
   const isLoading = loading || profilesLoading;
 
   return (
@@ -327,6 +330,9 @@ function AssigneeTaskList({
         </CardTitle>
         <p className="text-xs text-muted-foreground">
           Pending task instances grouped by assignee
+          {entries.length > 0 && (
+            <span className="ml-1">({entries.length} employees)</span>
+          )}
         </p>
       </CardHeader>
       <CardContent>
@@ -341,55 +347,62 @@ function AssigneeTaskList({
             No pending tasks for any assignee.
           </div>
         ) : (
-          <div className="space-y-4">
-            {entries.map(([principal, insts], idx) => {
-              const name = profileMap.get(principal) ?? "Unknown Employee";
-              return (
-                <motion.div
-                  key={principal}
-                  initial={{ opacity: 0, y: 6 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: idx * 0.05 }}
-                  className="rounded-lg border bg-muted/30 p-3"
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2">
-                      <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-sm font-semibold text-primary">
-                        {name.charAt(0).toUpperCase()}
-                      </div>
-                      <span className="font-medium text-sm">{name}</span>
-                    </div>
-                    <Badge className="bg-amber-100 text-amber-700 border-0 text-xs">
-                      {insts.length} Pending
-                    </Badge>
-                  </div>
-                  <div className="space-y-1 pl-10">
-                    {insts.slice(0, 4).map((inst) => {
-                      const [y, m, d] = inst.targetDate.split("-");
-                      return (
-                        <div
-                          key={inst.instanceKey}
-                          className="flex items-center justify-between text-xs"
-                        >
-                          <span className="truncate text-foreground/80 flex-1 mr-2">
-                            {inst.task.title}
-                          </span>
-                          <span className="text-muted-foreground shrink-0">
-                            {d}-{m}-{y}
-                          </span>
+          <>
+            <div className="space-y-4">
+              {pagination.pageItems.map(([principal, insts], idx) => {
+                const name = profileMap.get(principal) ?? "Unknown Employee";
+                return (
+                  <motion.div
+                    key={principal}
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: idx * 0.05 }}
+                    className="rounded-lg border bg-muted/30 p-3"
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-sm font-semibold text-primary">
+                          {name.charAt(0).toUpperCase()}
                         </div>
-                      );
-                    })}
-                    {insts.length > 4 && (
-                      <p className="text-xs text-muted-foreground">
-                        +{insts.length - 4} more
-                      </p>
-                    )}
-                  </div>
-                </motion.div>
-              );
-            })}
-          </div>
+                        <span className="font-medium text-sm">{name}</span>
+                      </div>
+                      <Badge className="bg-amber-100 text-amber-700 border-0 text-xs">
+                        {insts.length} Pending
+                      </Badge>
+                    </div>
+                    <div className="space-y-1 pl-10">
+                      {insts.slice(0, 4).map((inst) => {
+                        const [y, m, d] = inst.targetDate.split("-");
+                        return (
+                          <div
+                            key={inst.instanceKey}
+                            className="flex items-center justify-between text-xs"
+                          >
+                            <span className="truncate text-foreground/80 flex-1 mr-2">
+                              {inst.task.title}
+                            </span>
+                            <span className="text-muted-foreground shrink-0">
+                              {d}-{m}-{y}
+                            </span>
+                          </div>
+                        );
+                      })}
+                      {insts.length > 4 && (
+                        <p className="text-xs text-muted-foreground">
+                          +{insts.length - 4} more
+                        </p>
+                      )}
+                    </div>
+                  </motion.div>
+                );
+              })}
+            </div>
+            {pagination.totalPages > 1 && (
+              <div className="mt-4">
+                <PaginationControls {...pagination} label="employees" />
+              </div>
+            )}
+          </>
         )}
       </CardContent>
     </Card>
@@ -415,7 +428,6 @@ export default function DashboardPage() {
     pausedTaskIds,
   );
 
-  // Count paused tasks that actually exist in allTasks
   const pausedCount = isAdmin
     ? (allTasks ?? []).filter((t) => pausedTaskIds.has(t.id.toString())).length
     : 0;
@@ -437,7 +449,6 @@ export default function DashboardPage() {
         </p>
       </div>
 
-      {/* Total Tasks section - admin only */}
       {isAdmin && (
         <TotalTasksSection
           pendingCount={pendingCount}
@@ -483,7 +494,6 @@ export default function DashboardPage() {
         />
       )}
 
-      {/* Department section - admin only */}
       {isAdmin && (
         <DepartmentSection
           pendingInstances={pendingInstances}
@@ -542,6 +552,17 @@ export default function DashboardPage() {
                   <InstanceRow instance={inst} index={i} />
                 </motion.div>
               ))}
+              {pendingInstances.length > 8 && (
+                <p className="text-xs text-muted-foreground text-center pt-3">
+                  +{pendingInstances.length - 8} more &mdash;{" "}
+                  <Link
+                    to={isAdmin ? "/all-tasks" : "/my-tasks"}
+                    className="text-primary hover:underline"
+                  >
+                    View all
+                  </Link>
+                </p>
+              )}
             </div>
           )}
         </CardContent>
