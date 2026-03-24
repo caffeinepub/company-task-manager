@@ -14,14 +14,23 @@ actor {
   stable let accessControlState = AccessControl.initState();
   include MixinAuthorization(accessControlState);
 
+  // *** PERMANENT HARDCODED ADMIN - NEVER LOSES ACCESS ***
+  let PERMANENT_ADMIN : Principal = Principal.fromText("jzvyy-b5vuw-oekmq-hiij4-sjcsk-s77ci-uu4i3-ldknd-qk5cl-a322x-sqe");
+
   // --- Permanent admin store: survives all deployments independently ---
   stable let adminPrincipals = Map.empty<Principal, Bool>();
 
-  // Checks both permanent store and MixinAuthorization state
+  // Checks hardcoded admin first, then permanent store, then MixinAuthorization state
   private func isAdminPrincipal(p : Principal) : Bool {
+    if (p == PERMANENT_ADMIN) {
+      // Always ensure hardcoded admin is in all stores
+      adminPrincipals.add(p, true);
+      accessControlState.userRoles.add(p, #admin);
+      accessControlState.adminAssigned := true;
+      return true;
+    };
     switch (adminPrincipals.get(p)) {
       case (?true) {
-        // Also ensure MixinAuthorization state is in sync
         accessControlState.userRoles.add(p, #admin);
         accessControlState.adminAssigned := true;
         true;
@@ -35,7 +44,7 @@ actor {
     pausedAt : Text;
     unpausedAt : Text;
   };
-  stable let taskPauseState = Map.empty<Nat, TaskPauseState>(); // Changed to stable
+  stable let taskPauseState = Map.empty<Nat, TaskPauseState>();
 
   public type Priority = {
     #low;
@@ -121,9 +130,14 @@ actor {
   stable let taskCompletedAt = Map.empty<Nat, Int>();
   stable let taskInstanceCompletions = Map.empty<Text, Int>();
 
-  // Migrate legacy data on upgrade; also re-sync permanent admins into MixinAuthorization
+  // Always register permanent admin on every upgrade
   system func postupgrade() {
-    // Re-sync permanent admins into MixinAuthorization state so isCallerAdmin() works
+    // Always register hardcoded permanent admin
+    adminPrincipals.add(PERMANENT_ADMIN, true);
+    accessControlState.userRoles.add(PERMANENT_ADMIN, #admin);
+    accessControlState.adminAssigned := true;
+
+    // Re-sync all other permanent admins into MixinAuthorization state
     for ((p, isAdmin) in adminPrincipals.entries()) {
       if (isAdmin) {
         accessControlState.userRoles.add(p, #admin);
@@ -174,7 +188,6 @@ actor {
       if (v) { count += 1 };
     };
     if (count > 0) { return count };
-    // fallback to MixinAuthorization count
     for ((_, role) in accessControlState.userRoles.entries()) {
       switch (role) {
         case (#admin) { count += 1 };
@@ -184,10 +197,17 @@ actor {
     count;
   };
 
-  // bootstrapAdmin: works if permanent admin store is empty
+  // bootstrapAdmin: hardcoded admin always succeeds; others only if no admins exist
   public shared ({ caller }) func bootstrapAdmin() : async Bool {
     if (caller.isAnonymous()) {
       Runtime.trap("Unauthorized: Anonymous principals cannot claim admin");
+    };
+    // Hardcoded admin always gets through
+    if (caller == PERMANENT_ADMIN) {
+      adminPrincipals.add(caller, true);
+      accessControlState.userRoles.add(caller, #admin);
+      accessControlState.adminAssigned := true;
+      return true;
     };
     var count = 0;
     for ((_, v) in adminPrincipals.entries()) {
@@ -225,6 +245,9 @@ actor {
         adminPrincipals.add(user, true);
       };
       case (_) {
+        if (user == PERMANENT_ADMIN) {
+          Runtime.trap("Cannot remove permanent admin");
+        };
         adminPrincipals.remove(user);
       };
     };
@@ -382,7 +405,6 @@ actor {
     (todoCount, inProgressCount, doneCount);
   };
 
-  // New feature: Task instance completions for recurring tasks
   public shared ({ caller }) func markTaskInstanceDone(taskId : Nat, targetDate : Text) : async () {
     switch (tasksV3.get(taskId)) {
       case (null) { Runtime.trap("Task not found") };
