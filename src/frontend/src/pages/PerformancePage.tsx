@@ -24,14 +24,16 @@ import {
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { FrequencyType } from "../backend.d";
-import type { Task, UserProfileEntry } from "../backend.d";
+import type { Task, TaskPauseState, UserProfileEntry } from "../backend.d";
 import {
   useAllTasks,
   useAllUserProfiles,
   useIsAdmin,
   useTaskInstanceCompletions,
+  useTaskPauseStates,
   useTasksByEmployee,
 } from "../hooks/useQueries";
+import { isInPausedPeriod, isOffDay } from "../utils/taskInstances";
 
 // Format a Date as "YYYY-MM-DD"
 function dateToStr(d: Date): string {
@@ -60,6 +62,7 @@ function generateInstances(
   completions: Map<string, bigint>,
   fromDate: string,
   toDate: string,
+  pauseStates?: Map<string, TaskPauseState>,
 ): TaskInstance[] {
   const instances: TaskInstance[] = [];
 
@@ -73,6 +76,7 @@ function generateInstances(
       (task.frequency as any)?.daily !== undefined;
 
     const baseDate = task.targetDate; // YYYY-MM-DD string
+    const taskIdStr = task.id.toString();
 
     const datesToProcess: string[] = [];
 
@@ -82,11 +86,18 @@ function generateInstances(
       const end = today0();
       const cur = new Date(start);
       while (cur <= end) {
-        datesToProcess.push(dateToStr(cur));
+        const ds = dateToStr(cur);
+        // Skip office off days
+        if (!isOffDay(ds)) {
+          datesToProcess.push(ds);
+        }
         cur.setDate(cur.getDate() + 1);
       }
     } else {
-      datesToProcess.push(baseDate);
+      // For non-daily tasks, only include if the target date is not an off day
+      if (!isOffDay(baseDate)) {
+        datesToProcess.push(baseDate);
+      }
     }
 
     for (const dateStr of datesToProcess) {
@@ -95,6 +106,11 @@ function generateInstances(
         const d = new Date(`${dateStr}T00:00:00`);
         if (from && d < from) continue;
         if (to && d > to) continue;
+      }
+
+      // Skip instances that fall within a paused period
+      if (pauseStates && isInPausedPeriod(taskIdStr, dateStr, pauseStates)) {
+        continue;
       }
 
       const key = `${task.id}_${dateStr}`;
@@ -183,7 +199,6 @@ function StatusBadge({ status }: { status: "onTime" | "delayed" | "pending" }) {
 }
 
 function DepartmentPerformance({ instances }: { instances: TaskInstance[] }) {
-  // Group instances by department
   const deptMap = new Map<
     string,
     { onTime: number; delayed: number; pending: number }
@@ -305,12 +320,16 @@ function EmployeePerformance({
     data: completions = new Map<string, bigint>(),
     isLoading: loadingCompletions,
   } = useTaskInstanceCompletions();
+  const {
+    data: pauseStates = new Map<string, TaskPauseState>(),
+    isLoading: loadingPauseStates,
+  } = useTaskPauseStates();
 
-  const isLoading = loadingTasks || loadingCompletions;
+  const isLoading = loadingTasks || loadingCompletions || loadingPauseStates;
 
   const instances = useMemo(
-    () => generateInstances(tasks, completions, fromDate, toDate),
-    [tasks, completions, fromDate, toDate],
+    () => generateInstances(tasks, completions, fromDate, toDate, pauseStates),
+    [tasks, completions, fromDate, toDate, pauseStates],
   );
 
   const stats = useMemo(() => {
@@ -361,7 +380,7 @@ function EmployeePerformance({
           <p className="text-lg font-semibold text-foreground">
             Total: <span className="text-primary">{stats.total} Tasks</span>
             <span className="text-sm font-normal text-muted-foreground ml-2">
-              (including daily rollovers)
+              (excluding off days & paused periods)
             </span>
           </p>
         </CardContent>
@@ -524,6 +543,10 @@ function EmployeePerformance({
       <Card data-ocid="performance.table">
         <CardHeader>
           <CardTitle className="text-base">Task Instance Details</CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Off days (Sunday, 2nd &amp; 4th Saturday) and paused periods are
+            excluded.
+          </p>
         </CardHeader>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
@@ -581,13 +604,18 @@ function AllCompanyDepartmentPerformance({
     data: completions = new Map<string, bigint>(),
     isLoading: loadingCompletions,
   } = useTaskInstanceCompletions();
+  const {
+    data: pauseStates = new Map<string, TaskPauseState>(),
+    isLoading: loadingPauseStates,
+  } = useTaskPauseStates();
 
   const instances = useMemo(
-    () => generateInstances(allTasks, completions, fromDate, toDate),
-    [allTasks, completions, fromDate, toDate],
+    () =>
+      generateInstances(allTasks, completions, fromDate, toDate, pauseStates),
+    [allTasks, completions, fromDate, toDate, pauseStates],
   );
 
-  if (loadingTasks || loadingCompletions) {
+  if (loadingTasks || loadingCompletions || loadingPauseStates) {
     return (
       <div className="flex items-center justify-center py-8">
         <Loader2 className="h-5 w-5 animate-spin text-primary" />
@@ -657,8 +685,8 @@ export default function PerformancePage() {
           Performance Dashboard
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Scores across ALL daily task instances including rollovers. Search by
-          employee and filter by date range.
+          Scores across all task instances. Off days (Sunday, 2nd &amp; 4th
+          Saturday) and paused task periods are automatically excluded.
         </p>
       </div>
 

@@ -9,6 +9,7 @@ import {
   useMarkTaskInstanceDone,
   useMyTasks,
   useTaskInstanceCompletions,
+  useTaskPauseStates,
   useUnmarkTaskInstanceDone,
   useUpdateTaskStatus,
 } from "../hooks/useQueries";
@@ -250,12 +251,16 @@ export default function MyTasksPage() {
     data: instanceCompletions = new Map<string, bigint>(),
     isLoading: completionsLoading,
   } = useTaskInstanceCompletions();
+  const { data: pauseStateMap = new Map(), isLoading: pauseLoading } =
+    useTaskPauseStates();
 
-  const isLoading = tasksLoading || completionsLoading;
+  const isLoading = tasksLoading || completionsLoading || pauseLoading;
 
   const { pendingInstances, doneInstances } = expandAllTaskInstances(
     tasks ?? [],
     instanceCompletions,
+    undefined,
+    pauseStateMap,
   );
 
   return (
