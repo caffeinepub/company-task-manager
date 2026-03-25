@@ -103,15 +103,44 @@ function TaskInstanceCard({
         );
       }
     } else {
+      // For non-daily tasks: update both task status AND instance completion
+      // so that Performance Dashboard and Tracking Reports see correct data.
       const newStatus = isDone ? TaskStatus.todo : TaskStatus.done;
-      updateStatus.mutate(
-        { taskId: task.id, status: newStatus },
-        {
-          onSuccess: () =>
-            toast.success(isDone ? "Marked as pending" : "Marked as done"),
-          onError: () => toast.error("Failed to update"),
-        },
-      );
+      if (isDone) {
+        // Unmarking done: remove instance completion first, then update status
+        unmarkDone.mutate(
+          { taskId: task.id, targetDate },
+          {
+            onSuccess: () => {
+              updateStatus.mutate(
+                { taskId: task.id, status: newStatus },
+                {
+                  onSuccess: () => toast.success("Marked as pending"),
+                  onError: () => toast.error("Failed to update status"),
+                },
+              );
+            },
+            onError: () => toast.error("Failed to update"),
+          },
+        );
+      } else {
+        // Marking done: store instance completion first, then update status
+        markDone.mutate(
+          { taskId: task.id, targetDate },
+          {
+            onSuccess: () => {
+              updateStatus.mutate(
+                { taskId: task.id, status: newStatus },
+                {
+                  onSuccess: () => toast.success("Marked as done"),
+                  onError: () => toast.error("Failed to update status"),
+                },
+              );
+            },
+            onError: () => toast.error("Failed to update"),
+          },
+        );
+      }
     }
   }
 

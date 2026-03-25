@@ -116,12 +116,20 @@ function generateInstances(
       const key = `${task.id}_${dateStr}`;
       const completionTs = completions.get(key);
 
+      // Fallback: for non-daily tasks, also check task.status directly
+      // (handles tasks completed before dual-write was implemented)
+      const isDoneByStatus =
+        !isDaily && (task.status as any)?.done !== undefined;
+
       let status: "onTime" | "delayed" | "pending";
       if (completionTs !== undefined) {
         const completedDate = new Date(Number(completionTs / 1_000_000n));
         completedDate.setHours(0, 0, 0, 0);
         const instanceDay = new Date(`${dateStr}T00:00:00`);
         status = completedDate <= instanceDay ? "onTime" : "delayed";
+      } else if (isDoneByStatus) {
+        // Task status is done but no instance completion timestamp — treat as onTime
+        status = "onTime";
       } else {
         status = "pending";
       }

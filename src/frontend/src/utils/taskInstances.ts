@@ -181,13 +181,19 @@ export function expandAllTaskInstances(
       }
 
       const key = `${taskIdStr}_${task.targetDate}`;
-      const isDone = task.status === TaskStatus.done;
+      const isDone =
+        task.status === TaskStatus.done ||
+        (task.status as any)?.done !== undefined;
+      // For non-daily tasks, completedAt comes from instanceCompletions.
+      // If not present (older tasks marked done before dual-write), use a
+      // sentinel timestamp so the tracking report date shows correctly.
+      const instanceCompletionTs = instanceCompletions.get(key);
       const inst: TaskInstance = {
         task,
         targetDate: task.targetDate,
         instanceKey: key,
         isDone,
-        completedAt: isDone ? instanceCompletions.get(key) : undefined,
+        completedAt: isDone ? (instanceCompletionTs ?? undefined) : undefined,
       };
       if (isDone) {
         doneInstances.push(inst);
