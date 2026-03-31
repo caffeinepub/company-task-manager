@@ -20,10 +20,12 @@ actor {
   // --- Permanent admin store: survives all deployments independently ---
   stable let adminPrincipals = Map.empty<Principal, Bool>();
 
+  // --- Super User store ---
+  stable let superUserPrincipals = Map.empty<Principal, Bool>();
+
   // Checks hardcoded admin first, then permanent store, then MixinAuthorization state
   private func isAdminPrincipal(p : Principal) : Bool {
     if (p == PERMANENT_ADMIN) {
-      // Always ensure hardcoded admin is in all stores
       adminPrincipals.add(p, true);
       accessControlState.userRoles.add(p, #admin);
       accessControlState.adminAssigned := true;
@@ -39,12 +41,28 @@ actor {
     };
   };
 
+  private func isSuperUserPrincipal(p : Principal) : Bool {
+    if (isAdminPrincipal(p)) { return false }; // admins are not super users
+    switch (superUserPrincipals.get(p)) {
+      case (?true) { true };
+      case (_) { false };
+    };
+  };
+
+  private func isAdminOrSuperUser(p : Principal) : Bool {
+    isAdminPrincipal(p) or isSuperUserPrincipal(p);
+  };
+
   // Task pause state type and map
   public type TaskPauseState = {
     pausedAt : Text;
     unpausedAt : Text;
   };
   stable let taskPauseState = Map.empty<Nat, TaskPauseState>();
+
+  // Per-instance remarks and timing status
+  stable let taskInstanceRemarks = Map.empty<Text, Text>();
+  stable let taskInstanceTimingStatus = Map.empty<Text, Text>();
 
   public type Priority = {
     #low;
@@ -144,6 +162,12 @@ actor {
         accessControlState.adminAssigned := true;
       };
     };
+    // Re-sync super users into user role in accessControlState
+    for ((p, isSu) in superUserPrincipals.entries()) {
+      if (isSu) {
+        accessControlState.userRoles.add(p, #user);
+      };
+    };
     // Migrate V1 -> V3
     for ((id, t) in tasks.entries()) {
       if (tasksV3.get(id) == null) {
@@ -202,7 +226,6 @@ actor {
     if (caller.isAnonymous()) {
       Runtime.trap("Unauthorized: Anonymous principals cannot claim admin");
     };
-    // Hardcoded admin always gets through
     if (caller == PERMANENT_ADMIN) {
       adminPrincipals.add(caller, true);
       accessControlState.userRoles.add(caller, #admin);
@@ -217,7 +240,6 @@ actor {
       if (isAdminPrincipal(caller)) { return true };
       return false;
     };
-    // No permanent admins: allow claiming
     adminPrincipals.add(caller, true);
     accessControlState.userRoles.add(caller, #admin);
     accessControlState.adminAssigned := true;
@@ -243,6 +265,7 @@ actor {
           Runtime.trap("Cannot assign admin role: Maximum of 10 admins reached");
         };
         adminPrincipals.add(user, true);
+        superUserPrincipals.remove(user);
       };
       case (_) {
         if (user == PERMANENT_ADMIN) {
@@ -252,6 +275,23 @@ actor {
       };
     };
     AccessControl.assignRole(accessControlState, caller, user, role);
+  };
+
+  // Assign or remove Super User role (admin only)
+  public shared ({ caller }) func assignSuperUserRole(user : Principal, assign : Bool) : async () {
+    if (not isAdminPrincipal(caller)) {
+      Runtime.trap("Unauthorized: Only admins can assign Super User role");
+    };
+    if (assign) {
+      superUserPrincipals.add(user, true);
+      accessControlState.userRoles.add(user, #user);
+    } else {
+      superUserPrincipals.remove(user);
+    };
+  };
+
+  public query ({ caller }) func isCallerSuperUser() : async Bool {
+    isSuperUserPrincipal(caller);
   };
 
   public query ({ caller }) func getCallerUserProfile() : async ?UserProfile {
@@ -273,22 +313,22 @@ actor {
   };
 
   public query ({ caller }) func getAllUserProfiles() : async [UserProfileEntry] {
-    if (not isAdminPrincipal(caller)) {
-      Runtime.trap("Unauthorized: Only admins can view all user profiles");
+    if (not isAdminOrSuperUser(caller)) {
+      Runtime.trap("Unauthorized: Only admins or super users can view all user profiles");
     };
     userProfiles.entries().map(func((p, profile)) { { principal = p; profile } }).toArray();
   };
 
   public query ({ caller }) func getTasksByEmployee(employee : Principal) : async [Task] {
-    if (not isAdminPrincipal(caller)) {
-      Runtime.trap("Unauthorized: Only admins can view employee tasks");
+    if (not isAdminOrSuperUser(caller)) {
+      Runtime.trap("Unauthorized: Only admins or super users can view employee tasks");
     };
     tasksV3.values().filter(func(task) { task.assignee == employee }).toArray();
   };
 
   public query ({ caller }) func getCompletionDates() : async [CompletionDate] {
-    if (not isAdminPrincipal(caller)) {
-      Runtime.trap("Unauthorized: Only admins can view completion dates");
+    if (not isAdminOrSuperUser(caller)) {
+      Runtime.trap("Unauthorized: Only admins or super users can view completion dates");
     };
     taskCompletedAt.entries().map(func((id, ts)) { { taskId = id; completionTimestamp = ts } }).toArray();
   };
@@ -303,8 +343,8 @@ actor {
     frequencyDays : Text,
     department : Text
   ) : async Nat {
-    if (not isAdminPrincipal(caller)) {
-      Runtime.trap("Unauthorized: Only admins can create tasks");
+    if (not isAdminOrSuperUser(caller)) {
+      Runtime.trap("Unauthorized: Only admins or super users can create tasks");
     };
 
     let id = nextTaskId;
@@ -332,7 +372,7 @@ actor {
     switch (tasksV3.get(taskId)) {
       case (null) { null };
       case (?task) {
-        if (task.assignee == caller or isAdminPrincipal(caller)) {
+        if (task.assignee == caller or isAdminOrSuperUser(caller)) {
           ?task;
         } else {
           null;
@@ -347,8 +387,8 @@ actor {
   };
 
   public query ({ caller }) func getAllTasks() : async [Task] {
-    if (not isAdminPrincipal(caller)) {
-      Runtime.trap("Unauthorized: Only admins can view all tasks");
+    if (not isAdminOrSuperUser(caller)) {
+      Runtime.trap("Unauthorized: Only admins or super users can view all tasks");
     };
     tasksV3.values().toArray();
   };
@@ -372,6 +412,25 @@ actor {
           };
         };
         let updatedTask : Task = { task with status = newStatus };
+        tasksV3.add(taskId, updatedTask);
+      };
+    };
+  };
+
+  // Admin can update task title, description, and targetDate
+  public shared ({ caller }) func updateTaskDetails(
+    taskId : Nat,
+    title : Text,
+    description : Text,
+    targetDate : Text
+  ) : async () {
+    if (not isAdminPrincipal(caller)) {
+      Runtime.trap("Unauthorized: Only admins can update task details");
+    };
+    switch (tasksV3.get(taskId)) {
+      case (null) { Runtime.trap("Task not found") };
+      case (?task) {
+        let updatedTask : Task = { task with title; description; targetDate };
         tasksV3.add(taskId, updatedTask);
       };
     };
@@ -438,6 +497,44 @@ actor {
     taskInstanceCompletions.entries().toArray();
   };
 
+  // Set remarks for a specific task instance (admin only)
+  public shared ({ caller }) func setTaskInstanceRemarks(instanceKey : Text, remarks : Text) : async () {
+    if (not isAdminPrincipal(caller)) {
+      Runtime.trap("Unauthorized: Only admins can set task remarks");
+    };
+    if (remarks == "") {
+      taskInstanceRemarks.remove(instanceKey);
+    } else {
+      taskInstanceRemarks.add(instanceKey, remarks);
+    };
+  };
+
+  // Set timing status for a task instance: "onTime", "delayed", or "" (admin only)
+  public shared ({ caller }) func setTaskInstanceTimingStatus(instanceKey : Text, status : Text) : async () {
+    if (not isAdminPrincipal(caller)) {
+      Runtime.trap("Unauthorized: Only admins can set timing status");
+    };
+    if (status == "") {
+      taskInstanceTimingStatus.remove(instanceKey);
+    } else {
+      taskInstanceTimingStatus.add(instanceKey, status);
+    };
+  };
+
+  public query ({ caller }) func getTaskInstanceRemarks() : async [(Text, Text)] {
+    if (not isAdminOrSuperUser(caller)) {
+      Runtime.trap("Unauthorized: Only admins or super users can view remarks");
+    };
+    taskInstanceRemarks.entries().toArray();
+  };
+
+  public query ({ caller }) func getTaskInstanceTimingStatuses() : async [(Text, Text)] {
+    if (not isAdminOrSuperUser(caller)) {
+      Runtime.trap("Unauthorized: Only admins or super users can view timing statuses");
+    };
+    taskInstanceTimingStatus.entries().toArray();
+  };
+
   public shared ({ caller }) func pauseTask(taskId : Nat) : async () {
     if (not isAdminPrincipal(caller)) {
       Runtime.trap("Unauthorized: Only admins can pause task");
@@ -478,8 +575,8 @@ actor {
   };
 
   public query ({ caller }) func getTaskPauseStates() : async [(Nat, TaskPauseState)] {
-    if (not isAdminPrincipal(caller)) {
-      Runtime.trap("Unauthorized: Only admins can view task pause states");
+    if (not isAdminOrSuperUser(caller)) {
+      Runtime.trap("Unauthorized: Only admins or super users can view task pause states");
     };
     taskPauseState.entries().toArray();
   };

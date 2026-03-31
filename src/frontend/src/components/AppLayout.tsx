@@ -4,6 +4,7 @@ import {
   BarChart2,
   Building2,
   CheckSquare,
+  ClipboardCheck,
   ClipboardList,
   LayoutDashboard,
   ListTodo,
@@ -22,53 +23,78 @@ import {
   useCallerProfile,
   useCallerRole,
   useIsAdmin,
+  useIsSuperUser,
 } from "../hooks/useQueries";
+
+type VisibilityLevel = "all" | "superUserAndAdmin" | "adminOnly";
 
 interface NavItem {
   label: string;
   to: string;
   icon: React.ReactNode;
-  adminOnly?: boolean;
+  visibility?: VisibilityLevel;
 }
 
 const navItems: NavItem[] = [
-  { label: "Dashboard", to: "/", icon: <LayoutDashboard size={18} /> },
-  { label: "My Tasks", to: "/my-tasks", icon: <ListTodo size={18} /> },
+  {
+    label: "Dashboard",
+    to: "/",
+    icon: <LayoutDashboard size={18} />,
+    visibility: "superUserAndAdmin",
+  },
+  {
+    label: "My Tasks",
+    to: "/my-tasks",
+    icon: <ListTodo size={18} />,
+    visibility: "all",
+  },
   {
     label: "All Tasks",
     to: "/all-tasks",
     icon: <ClipboardList size={18} />,
-    adminOnly: true,
+    visibility: "superUserAndAdmin",
   },
   {
     label: "Create Task",
     to: "/create-task",
     icon: <PlusCircle size={18} />,
-    adminOnly: true,
+    visibility: "superUserAndAdmin",
   },
   {
     label: "Employee Panel",
     to: "/employee-panel",
     icon: <Users size={18} />,
-    adminOnly: true,
+    visibility: "adminOnly",
   },
   {
     label: "Employee Tasks",
     to: "/employee-tasks",
     icon: <CheckSquare size={18} />,
-    adminOnly: true,
+    visibility: "superUserAndAdmin",
+  },
+  {
+    label: "Tasks Done",
+    to: "/employees-tasks-done",
+    icon: <ClipboardCheck size={18} />,
+    visibility: "superUserAndAdmin",
   },
   {
     label: "Performance",
     to: "/performance",
     icon: <BarChart2 size={18} />,
-    adminOnly: true,
+    visibility: "adminOnly",
   },
-  { label: "Profile", to: "/profile", icon: <User size={18} /> },
+  {
+    label: "Profile",
+    to: "/profile",
+    icon: <User size={18} />,
+    visibility: "all",
+  },
   {
     label: "Admin Panel",
     to: "/admin-panel",
     icon: <ShieldCheck size={18} />,
+    visibility: "all",
   },
 ];
 
@@ -76,16 +102,26 @@ function SidebarContent({ onClose }: { onClose?: () => void }) {
   const location = useLocation();
   const { clear } = useInternetIdentity();
   const { data: isAdmin } = useIsAdmin();
+  const { data: isSuperUser } = useIsSuperUser();
   const { data: profile } = useCallerProfile();
   const { data: role } = useCallerRole();
 
-  const visibleItems = navItems.filter((item) => !item.adminOnly || isAdmin);
+  const visibleItems = navItems.filter((item) => {
+    const level = item.visibility ?? "all";
+    if (level === "all") return true;
+    if (level === "superUserAndAdmin") return isAdmin || isSuperUser;
+    if (level === "adminOnly") return isAdmin;
+    return true;
+  });
+
   const roleLabel =
     role === UserRole.admin
       ? "Admin"
-      : role === UserRole.user
-        ? "User"
-        : "Guest";
+      : isSuperUser
+        ? "Super User"
+        : role === UserRole.user
+          ? "User"
+          : "Guest";
 
   return (
     <div className="flex flex-col h-full">

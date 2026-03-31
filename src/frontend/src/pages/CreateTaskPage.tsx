@@ -33,25 +33,37 @@ const WEEKDAYS = [
   { label: "Sunday", value: "Sun", jsDay: 0 },
 ];
 
+/** Format a Date using local timezone components (avoids UTC offset bugs). */
+function localDateStr(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
 function todayStr(): string {
-  const d = new Date();
-  return d.toISOString().slice(0, 10);
+  return localDateStr(new Date());
 }
 
 function dateForWeekday(jsDay: number): string {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const todayDay = today.getDay();
-  const diff = jsDay - todayDay;
+  let diff = jsDay - todayDay;
+  // If the selected day is earlier in the week (diff < 0), go to next week.
+  // If diff === 0, today is the selected day — return today.
+  if (diff < 0) {
+    diff += 7;
+  }
   const target = new Date(today);
   target.setDate(today.getDate() + diff);
-  return target.toISOString().slice(0, 10);
+  return localDateStr(target);
 }
 
 function dateForMonthDay(d: number): string {
   const now = new Date();
   const target = new Date(now.getFullYear(), now.getMonth(), d);
-  return target.toISOString().slice(0, 10);
+  return localDateStr(target);
 }
 
 export default function CreateTaskPage() {
@@ -297,7 +309,7 @@ export default function CreateTaskPage() {
                 </Label>
                 <p className="text-xs text-muted-foreground">
                   Target date will auto-update to the selected day in the
-                  current week.
+                  current week (or today if today matches).
                 </p>
                 <div className="grid grid-cols-2 gap-2">
                   {WEEKDAYS.map((day) => (

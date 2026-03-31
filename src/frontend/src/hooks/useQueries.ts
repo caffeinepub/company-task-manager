@@ -31,6 +31,18 @@ export function useIsAdmin() {
   });
 }
 
+export function useIsSuperUser() {
+  const { actor, isFetching } = useActor();
+  return useQuery<boolean>({
+    queryKey: ["isSuperUser"],
+    queryFn: async () => {
+      if (!actor) return false;
+      return (actor as any).isCallerSuperUser();
+    },
+    enabled: !!actor && !isFetching,
+  });
+}
+
 export function useHasAnyAdmin() {
   const { actor, isFetching } = useActor();
   return useQuery<boolean>({
@@ -413,6 +425,108 @@ export function useBootstrapAdmin() {
       queryClient.invalidateQueries({ queryKey: ["callerRole"] });
       queryClient.invalidateQueries({ queryKey: ["hasAnyAdmin"] });
       queryClient.invalidateQueries({ queryKey: ["adminCount"] });
+    },
+  });
+}
+
+export function useTaskInstanceRemarks() {
+  const { actor, isFetching } = useActor();
+  return useQuery<Map<string, string>>({
+    queryKey: ["taskInstanceRemarks"],
+    queryFn: async () => {
+      if (!actor) return new Map<string, string>();
+      const entries = await (actor as any).getTaskInstanceRemarks();
+      return new Map(entries as Array<[string, string]>);
+    },
+    enabled: !!actor && !isFetching,
+  });
+}
+
+export function useTaskInstanceTimingStatuses() {
+  const { actor, isFetching } = useActor();
+  return useQuery<Map<string, string>>({
+    queryKey: ["taskInstanceTimingStatuses"],
+    queryFn: async () => {
+      if (!actor) return new Map<string, string>();
+      const entries = await (actor as any).getTaskInstanceTimingStatuses();
+      return new Map(entries as Array<[string, string]>);
+    },
+    enabled: !!actor && !isFetching,
+  });
+}
+
+export function useSetTaskInstanceRemarks() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      instanceKey,
+      remarks,
+    }: { instanceKey: string; remarks: string }) => {
+      if (!actor) throw new Error("No actor");
+      return (actor as any).setTaskInstanceRemarks(instanceKey, remarks);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["taskInstanceRemarks"] });
+    },
+  });
+}
+
+export function useSetTaskInstanceTimingStatus() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      instanceKey,
+      status,
+    }: { instanceKey: string; status: string }) => {
+      if (!actor) throw new Error("No actor");
+      return (actor as any).setTaskInstanceTimingStatus(instanceKey, status);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["taskInstanceTimingStatuses"],
+      });
+    },
+  });
+}
+
+export function useUpdateTaskDetails() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      taskId,
+      title,
+      description,
+      targetDate,
+    }: {
+      taskId: bigint;
+      title: string;
+      description: string;
+      targetDate: string;
+    }) => {
+      if (!actor) throw new Error("No actor");
+      return (actor as any).updateTaskDetails(
+        taskId,
+        title,
+        description,
+        targetDate,
+      );
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["allTasks"] });
+    },
+  });
+}
+
+export function useAssignSuperUserRole() {
+  const { actor } = useActor();
+  return useMutation({
+    mutationFn: async ({ user, assign }: { user: string; assign: boolean }) => {
+      if (!actor) throw new Error("No actor");
+      const principal = Principal.fromText(user);
+      return (actor as any).assignSuperUserRole(principal, assign);
     },
   });
 }

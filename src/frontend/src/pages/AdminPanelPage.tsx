@@ -21,6 +21,7 @@ import {
   AlertTriangle,
   Loader2,
   ShieldCheck,
+  Star,
   UserCog,
   Users,
 } from "lucide-react";
@@ -30,6 +31,7 @@ import { UserRole } from "../backend.d";
 import { useInternetIdentity } from "../hooks/useInternetIdentity";
 import {
   useAdminCount,
+  useAssignSuperUserRole,
   useAssignUserRoleAsAdmin,
   useBootstrapAdmin,
   useIsAdmin,
@@ -47,12 +49,16 @@ export default function AdminPanelPage() {
     refetch: refetchAdminCount,
   } = useAdminCount();
   const assignRole = useAssignUserRoleAsAdmin();
+  const assignSuperUser = useAssignSuperUserRole();
   const bootstrapAdmin = useBootstrapAdmin();
   const { identity } = useInternetIdentity();
 
   const [principal, setPrincipal] = useState("");
   const [role, setRole] = useState<UserRole>(UserRole.user);
   const [error, setError] = useState("");
+
+  const [superUserPrincipal, setSuperUserPrincipal] = useState("");
+  const [superUserError, setSuperUserError] = useState("");
 
   const myPrincipal = identity?.getPrincipal().toText() ?? "";
   const maxAdmins = 10;
@@ -61,7 +67,6 @@ export default function AdminPanelPage() {
   const submitDisabled =
     assignRole.isPending || (adminRoleSelected && adminLimitReached);
 
-  // Show claim card when not admin OR when permanent admin store is empty
   const showClaimCard = !isAdmin || adminCount === 0;
 
   function handleSubmit(e: React.FormEvent) {
@@ -113,6 +118,52 @@ export default function AdminPanelPage() {
     });
   }
 
+  function handleAssignSuperUser() {
+    setSuperUserError("");
+    if (!superUserPrincipal.trim()) {
+      setSuperUserError("Please enter a principal ID.");
+      return;
+    }
+    assignSuperUser.mutate(
+      { user: superUserPrincipal.trim(), assign: true },
+      {
+        onSuccess: () => {
+          toast.success("Super User role assigned!");
+          setSuperUserPrincipal("");
+        },
+        onError: (err) => {
+          const msg =
+            err instanceof Error ? err.message : "Failed to assign Super User";
+          setSuperUserError(msg);
+          toast.error("Failed to assign Super User");
+        },
+      },
+    );
+  }
+
+  function handleRemoveSuperUser() {
+    setSuperUserError("");
+    if (!superUserPrincipal.trim()) {
+      setSuperUserError("Please enter a principal ID.");
+      return;
+    }
+    assignSuperUser.mutate(
+      { user: superUserPrincipal.trim(), assign: false },
+      {
+        onSuccess: () => {
+          toast.success("Super User role removed!");
+          setSuperUserPrincipal("");
+        },
+        onError: (err) => {
+          const msg =
+            err instanceof Error ? err.message : "Failed to remove Super User";
+          setSuperUserError(msg);
+          toast.error("Failed to remove Super User");
+        },
+      },
+    );
+  }
+
   if (isAdminLoading || isAdminCountLoading) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -149,7 +200,7 @@ export default function AdminPanelPage() {
         </div>
       </div>
 
-      {/* Claim Admin Card — shown when not admin OR admin store is empty */}
+      {/* Claim Admin Card */}
       {showClaimCard && (
         <Card className="shadow-card border-primary/30">
           <CardHeader className="pb-3">
@@ -203,7 +254,7 @@ export default function AdminPanelPage() {
         </Card>
       )}
 
-      {/* Role Assignment Card — shown only to confirmed admins */}
+      {/* Role Assignment + Super User — admin only */}
       {isAdmin && adminCount > 0 && (
         <>
           {adminLimitReached && (
@@ -299,6 +350,67 @@ export default function AdminPanelPage() {
                   )}
                 </Button>
               </form>
+            </CardContent>
+          </Card>
+
+          {/* Super User Management */}
+          <Card className="shadow-card">
+            <CardHeader className="pb-4">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Star size={16} className="text-amber-500" />
+                Super User Management
+              </CardTitle>
+              <CardDescription>
+                Super Users can view all tasks, all employees' data, and the
+                Tasks Done panel — but cannot edit tasks.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="superUserPrincipal">
+                  User Principal <span className="text-destructive">*</span>
+                </Label>
+                <Input
+                  id="superUserPrincipal"
+                  value={superUserPrincipal}
+                  onChange={(e) => setSuperUserPrincipal(e.target.value)}
+                  placeholder="aaaaa-bbbbb-ccccc-ddddd-eee"
+                  className="font-mono text-xs"
+                  data-ocid="admin_panel.superuser_principal.input"
+                />
+              </div>
+              {superUserError && (
+                <p
+                  className="text-sm text-destructive"
+                  data-ocid="admin_panel.superuser.error_state"
+                >
+                  {superUserError}
+                </p>
+              )}
+              <div className="flex gap-2">
+                <Button
+                  onClick={handleAssignSuperUser}
+                  disabled={assignSuperUser.isPending}
+                  className="flex-1"
+                  data-ocid="admin_panel.assign_superuser.button"
+                >
+                  {assignSuperUser.isPending ? (
+                    <Loader2 size={14} className="mr-2 animate-spin" />
+                  ) : (
+                    <Star size={14} className="mr-2" />
+                  )}
+                  Assign Super User
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={handleRemoveSuperUser}
+                  disabled={assignSuperUser.isPending}
+                  className="flex-1"
+                  data-ocid="admin_panel.remove_superuser.button"
+                >
+                  Remove Super User
+                </Button>
+              </div>
             </CardContent>
           </Card>
         </>

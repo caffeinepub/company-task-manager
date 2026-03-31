@@ -1,23 +1,37 @@
 # Company Task Manager
 
 ## Current State
-Admin role is stored in a stable map (`adminPrincipals`) and synced to MixinAuthorization on postupgrade. However, full redeployments wipe stable state, causing repeated admin loss.
+The app supports Admin/User/Guest roles. Admin-gated pages: All Tasks, Create Task, Employee Panel, Employee Tasks, Performance. There is no "Employees Tasks Done" panel, no Super User role, no per-instance remarks or timing-status fields.
 
 ## Requested Changes (Diff)
 
 ### Add
-- Hardcoded permanent admin principal: `jzvyy-b5vuw-oekmq-hiij4-sjcsk-s77ci-uu4i3-ldknd-qk5cl-a322x-sqe`
+- Super User role (tracked in a new `superUserPrincipals` stable map in main.mo)
+- `isCallerSuperUser()` backend query
+- `assignSuperUserRole(user, assign)` — admin only
+- `taskInstanceRemarks` and `taskInstanceTimingStatus` stable maps (keyed by `taskId_targetDate`)
+- `setTaskInstanceRemarks(instanceKey, remarks)` — admin only
+- `setTaskInstanceTimingStatus(instanceKey, status)` — admin only (values: "onTime" | "delayed" | "")
+- `updateTaskDetails(taskId, title, description, targetDate)` — admin only
+- `getTaskInstanceRemarks()` and `getTaskInstanceTimingStatuses()` — admin + superUser
+- New page: `EmployeeTasksDonePage` at `/employees-tasks-done`
+- New hooks: `useIsSuperUser`, `useTaskInstanceRemarks`, `useTaskInstanceTimingStatuses`, `useSetTaskInstanceRemarks`, `useSetTaskInstanceTimingStatus`, `useUpdateTaskDetails`
 
 ### Modify
-- `isAdminPrincipal` to always return true for the hardcoded principal ID, regardless of stable state
-- `bootstrapAdmin` to always succeed for the hardcoded principal
-- `postupgrade` to always re-add the hardcoded principal to admin stores
+- `getAllTasks`, `getTasksByEmployee`, `getAllUserProfiles`, `getTaskPauseStates`, `getCompletionDates` — allow superUser access in addition to admin
+- `createTask` — allow superUser access
+- AppLayout nav: role-based visibility with 3 tiers (User, Super User, Admin)
+- App.tsx: add `/employees-tasks-done` route
+- AdminPanelPage: add Super User role assignment UI
 
 ### Remove
-- Nothing
+Nothing
 
 ## Implementation Plan
-1. Add a constant for the permanent admin principal
-2. Update `isAdminPrincipal` to check against this constant first
-3. Update `postupgrade` to always register the hardcoded principal as admin
-4. Update `bootstrapAdmin` to always allow the hardcoded principal to claim admin
+1. Modify `main.mo`: add superUser infrastructure, new maps, new query/mutation functions, update existing function access checks
+2. Update `backend.d.ts` with new signatures
+3. Update `useQueries.ts` with new hooks
+4. Create `EmployeeTasksDonePage.tsx`
+5. Update `AppLayout.tsx` for 3-tier nav visibility
+6. Update `App.tsx` for new route
+7. Update `AdminPanelPage.tsx` for Super User assignment

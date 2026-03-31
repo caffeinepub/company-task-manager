@@ -60,6 +60,7 @@ export enum UserRole {
 export interface backendInterface {
     assignCallerUserRole(user: Principal, role: UserRole): Promise<void>;
     assignUserRoleAsAdmin(user: Principal, role: UserRole): Promise<void>;
+    assignSuperUserRole(user: Principal, assign: boolean): Promise<void>;
     bootstrapAdmin(): Promise<boolean>;
     countTasksByStatus(): Promise<[bigint, bigint, bigint]>;
     createTask(title: string, description: string, assignee: Principal, targetDate: string, priority: Priority, frequency: FrequencyType, frequencyDays: string, department: string): Promise<bigint>;
@@ -73,15 +74,21 @@ export interface backendInterface {
     getMyTasks(): Promise<Array<Task>>;
     getTask(taskId: bigint): Promise<Task | null>;
     getTaskInstanceCompletions(): Promise<Array<[string, bigint]>>;
+    getTaskInstanceRemarks(): Promise<Array<[string, string]>>;
+    getTaskInstanceTimingStatuses(): Promise<Array<[string, string]>>;
     getTaskPauseStates(): Promise<Array<[bigint, TaskPauseState]>>;
     getTasksByEmployee(employee: Principal): Promise<Array<Task>>;
     getUserProfile(userPrincipal: Principal): Promise<UserProfile | null>;
     hasAnyAdmin(): Promise<boolean>;
     isCallerAdmin(): Promise<boolean>;
+    isCallerSuperUser(): Promise<boolean>;
     markTaskInstanceDone(taskId: bigint, targetDate: string): Promise<void>;
     pauseTask(taskId: bigint): Promise<void>;
     saveCallerUserProfile(profile: UserProfile): Promise<void>;
+    setTaskInstanceRemarks(instanceKey: string, remarks: string): Promise<void>;
+    setTaskInstanceTimingStatus(instanceKey: string, status: string): Promise<void>;
     unmarkTaskInstanceDone(taskId: bigint, targetDate: string): Promise<void>;
     unpauseTask(taskId: bigint): Promise<void>;
+    updateTaskDetails(taskId: bigint, title: string, description: string, targetDate: string): Promise<void>;
     updateTaskStatus(taskId: bigint, newStatus: TaskStatus): Promise<void>;
 }
