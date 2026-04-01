@@ -69,7 +69,6 @@ function nanoToYMD(nanoTs: bigint): string {
 interface EditState {
   instance: TaskInstance;
   description: string;
-  targetDate: string;
   remarks: string;
   timingStatus: string;
 }
@@ -186,7 +185,6 @@ export default function EmployeeTasksDonePage() {
       setEditState({
         instance: inst,
         description: inst.task.description,
-        targetDate: inst.targetDate,
         remarks: remarksMap.get(inst.instanceKey) ?? "",
         timingStatus: timingMap.get(inst.instanceKey) || "notSet",
       });
@@ -196,15 +194,17 @@ export default function EmployeeTasksDonePage() {
 
   async function handleSaveEdit() {
     if (!editState) return;
-    const { instance, description, targetDate, remarks, timingStatus } =
-      editState;
+    const { instance, description, remarks, timingStatus } = editState;
     try {
       await Promise.all([
+        // Always pass the task's stored base targetDate — never the instance date.
+        // Passing the instance date would overwrite task.targetDate and corrupt
+        // daily rollover generation (all instances before that date disappear).
         updateTaskDetails.mutateAsync({
           taskId: instance.task.id,
           title: instance.task.title,
           description,
-          targetDate,
+          targetDate: instance.task.targetDate,
         }),
         setRemarks.mutateAsync({
           instanceKey: instance.instanceKey,
@@ -532,6 +532,15 @@ export default function EmployeeTasksDonePage() {
           </DialogHeader>
           {editState && (
             <div className="space-y-4 py-2">
+              {/* Read-only instance date — for context only */}
+              <div className="space-y-1.5">
+                <Label>Instance Date</Label>
+                <Input
+                  value={formatDateDisplay(editState.instance.targetDate)}
+                  disabled
+                  className="bg-muted/50 cursor-not-allowed"
+                />
+              </div>
               <div className="space-y-1.5">
                 <Label>Description</Label>
                 <Textarea
@@ -543,19 +552,6 @@ export default function EmployeeTasksDonePage() {
                   }
                   rows={3}
                   data-ocid="tasks_done.description.textarea"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label>Target / Due Date</Label>
-                <Input
-                  type="date"
-                  value={editState.targetDate}
-                  onChange={(e) =>
-                    setEditState((prev) =>
-                      prev ? { ...prev, targetDate: e.target.value } : prev,
-                    )
-                  }
-                  data-ocid="tasks_done.target_date.input"
                 />
               </div>
               <div className="space-y-1.5">
