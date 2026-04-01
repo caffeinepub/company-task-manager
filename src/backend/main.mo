@@ -287,6 +287,7 @@ actor {
     };
   };
 
+
   public query ({ caller }) func isCallerSuperUser() : async Bool {
     isSuperUserPrincipal(caller);
   };

