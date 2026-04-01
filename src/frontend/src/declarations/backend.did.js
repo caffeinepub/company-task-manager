@@ -63,6 +63,7 @@ export const idlService = IDL.Service({
   '_initializeAccessControlWithSecret' : IDL.Func([IDL.Text], [], []),
   'assignCallerUserRole' : IDL.Func([IDL.Principal, UserRole], [], []),
   'assignUserRoleAsAdmin' : IDL.Func([IDL.Principal, UserRole], [], []),
+  'assignSuperUserRole' : IDL.Func([IDL.Principal, IDL.Bool], [], []),
   'bootstrapAdmin' : IDL.Func([], [IDL.Bool], []),
   'countTasksByStatus' : IDL.Func([], [IDL.Nat, IDL.Nat, IDL.Nat], ['query']),
   'createTask' : IDL.Func(
@@ -93,6 +94,16 @@ export const idlService = IDL.Service({
       [IDL.Vec(IDL.Tuple(IDL.Text, IDL.Int))],
       ['query'],
     ),
+  'getTaskInstanceRemarks' : IDL.Func(
+      [],
+      [IDL.Vec(IDL.Tuple(IDL.Text, IDL.Text))],
+      ['query'],
+    ),
+  'getTaskInstanceTimingStatuses' : IDL.Func(
+      [],
+      [IDL.Vec(IDL.Tuple(IDL.Text, IDL.Text))],
+      ['query'],
+    ),
   'getTaskPauseStates' : IDL.Func(
       [],
       [IDL.Vec(IDL.Tuple(IDL.Nat, TaskPauseState))],
@@ -106,11 +117,15 @@ export const idlService = IDL.Service({
     ),
   'hasAnyAdmin' : IDL.Func([], [IDL.Bool], ['query']),
   'isCallerAdmin' : IDL.Func([], [IDL.Bool], ['query']),
+  'isCallerSuperUser' : IDL.Func([], [IDL.Bool], ['query']),
   'markTaskInstanceDone' : IDL.Func([IDL.Nat, IDL.Text], [], []),
   'pauseTask' : IDL.Func([IDL.Nat], [], []),
   'saveCallerUserProfile' : IDL.Func([UserProfile], [], []),
+  'setTaskInstanceRemarks' : IDL.Func([IDL.Text, IDL.Text], [], []),
+  'setTaskInstanceTimingStatus' : IDL.Func([IDL.Text, IDL.Text], [], []),
   'unmarkTaskInstanceDone' : IDL.Func([IDL.Nat, IDL.Text], [], []),
   'unpauseTask' : IDL.Func([IDL.Nat], [], []),
+  'updateTaskDetails' : IDL.Func([IDL.Nat, IDL.Text, IDL.Text, IDL.Text], [], []),
   'updateTaskStatus' : IDL.Func([IDL.Nat, TaskStatus], [], []),
 });
 
@@ -169,6 +184,7 @@ export const idlFactory = ({ IDL }) => {
     '_initializeAccessControlWithSecret' : IDL.Func([IDL.Text], [], []),
     'assignCallerUserRole' : IDL.Func([IDL.Principal, UserRole], [], []),
     'assignUserRoleAsAdmin' : IDL.Func([IDL.Principal, UserRole], [], []),
+    'assignSuperUserRole' : IDL.Func([IDL.Principal, IDL.Bool], [], []),
     'bootstrapAdmin' : IDL.Func([], [IDL.Bool], []),
     'countTasksByStatus' : IDL.Func([], [IDL.Nat, IDL.Nat, IDL.Nat], ['query']),
     'createTask' : IDL.Func(
@@ -199,6 +215,16 @@ export const idlFactory = ({ IDL }) => {
         [IDL.Vec(IDL.Tuple(IDL.Text, IDL.Int))],
         ['query'],
       ),
+    'getTaskInstanceRemarks' : IDL.Func(
+        [],
+        [IDL.Vec(IDL.Tuple(IDL.Text, IDL.Text))],
+        ['query'],
+      ),
+    'getTaskInstanceTimingStatuses' : IDL.Func(
+        [],
+        [IDL.Vec(IDL.Tuple(IDL.Text, IDL.Text))],
+        ['query'],
+      ),
     'getTaskPauseStates' : IDL.Func(
         [],
         [IDL.Vec(IDL.Tuple(IDL.Nat, TaskPauseState))],
@@ -216,11 +242,15 @@ export const idlFactory = ({ IDL }) => {
       ),
     'hasAnyAdmin' : IDL.Func([], [IDL.Bool], ['query']),
     'isCallerAdmin' : IDL.Func([], [IDL.Bool], ['query']),
+    'isCallerSuperUser' : IDL.Func([], [IDL.Bool], ['query']),
     'markTaskInstanceDone' : IDL.Func([IDL.Nat, IDL.Text], [], []),
     'pauseTask' : IDL.Func([IDL.Nat], [], []),
     'saveCallerUserProfile' : IDL.Func([UserProfile], [], []),
+    'setTaskInstanceRemarks' : IDL.Func([IDL.Text, IDL.Text], [], []),
+    'setTaskInstanceTimingStatus' : IDL.Func([IDL.Text, IDL.Text], [], []),
     'unmarkTaskInstanceDone' : IDL.Func([IDL.Nat, IDL.Text], [], []),
     'unpauseTask' : IDL.Func([IDL.Nat], [], []),
+    'updateTaskDetails' : IDL.Func([IDL.Nat, IDL.Text, IDL.Text, IDL.Text], [], []),
     'updateTaskStatus' : IDL.Func([IDL.Nat, TaskStatus], [], []),
   });
 };

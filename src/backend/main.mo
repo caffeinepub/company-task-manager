@@ -15,6 +15,7 @@ actor {
   include MixinAuthorization(accessControlState);
 
   // *** PERMANENT HARDCODED ADMIN - NEVER LOSES ACCESS ***
+  stable var PERMANENT_ADMIN_MIXIN : Principal = Principal.fromText("jzvyy-b5vuw-oekmq-hiij4-sjcsk-s77ci-uu4i3-ldknd-qk5cl-a322x-sqe");
   let PERMANENT_ADMIN : Principal = Principal.fromText("jzvyy-b5vuw-oekmq-hiij4-sjcsk-s77ci-uu4i3-ldknd-qk5cl-a322x-sqe");
 
   // --- Permanent admin store: survives all deployments independently ---
@@ -42,7 +43,7 @@ actor {
   };
 
   private func isSuperUserPrincipal(p : Principal) : Bool {
-    if (isAdminPrincipal(p)) { return false }; // admins are not super users
+    if (isAdminPrincipal(p)) { return false };
     switch (superUserPrincipals.get(p)) {
       case (?true) { true };
       case (_) { false };
@@ -52,6 +53,7 @@ actor {
   private func isAdminOrSuperUser(p : Principal) : Bool {
     isAdminPrincipal(p) or isSuperUserPrincipal(p);
   };
+
 
   // Task pause state type and map
   public type TaskPauseState = {
@@ -150,19 +152,16 @@ actor {
 
   // Always register permanent admin on every upgrade
   system func postupgrade() {
-    // Always register hardcoded permanent admin
     adminPrincipals.add(PERMANENT_ADMIN, true);
     accessControlState.userRoles.add(PERMANENT_ADMIN, #admin);
     accessControlState.adminAssigned := true;
 
-    // Re-sync all other permanent admins into MixinAuthorization state
     for ((p, isAdmin) in adminPrincipals.entries()) {
       if (isAdmin) {
         accessControlState.userRoles.add(p, #admin);
         accessControlState.adminAssigned := true;
       };
     };
-    // Re-sync super users into user role in accessControlState
     for ((p, isSu) in superUserPrincipals.entries()) {
       if (isSu) {
         accessControlState.userRoles.add(p, #user);
@@ -221,7 +220,6 @@ actor {
     count;
   };
 
-  // bootstrapAdmin: hardcoded admin always succeeds; others only if no admins exist
   public shared ({ caller }) func bootstrapAdmin() : async Bool {
     if (caller.isAnonymous()) {
       Runtime.trap("Unauthorized: Anonymous principals cannot claim admin");
@@ -277,7 +275,6 @@ actor {
     AccessControl.assignRole(accessControlState, caller, user, role);
   };
 
-  // Assign or remove Super User role (admin only)
   public shared ({ caller }) func assignSuperUserRole(user : Principal, assign : Bool) : async () {
     if (not isAdminPrincipal(caller)) {
       Runtime.trap("Unauthorized: Only admins can assign Super User role");
@@ -417,7 +414,6 @@ actor {
     };
   };
 
-  // Admin can update task title, description, and targetDate
   public shared ({ caller }) func updateTaskDetails(
     taskId : Nat,
     title : Text,
@@ -497,7 +493,6 @@ actor {
     taskInstanceCompletions.entries().toArray();
   };
 
-  // Set remarks for a specific task instance (admin only)
   public shared ({ caller }) func setTaskInstanceRemarks(instanceKey : Text, remarks : Text) : async () {
     if (not isAdminPrincipal(caller)) {
       Runtime.trap("Unauthorized: Only admins can set task remarks");
@@ -509,7 +504,6 @@ actor {
     };
   };
 
-  // Set timing status for a task instance: "onTime", "delayed", or "" (admin only)
   public shared ({ caller }) func setTaskInstanceTimingStatus(instanceKey : Text, status : Text) : async () {
     if (not isAdminPrincipal(caller)) {
       Runtime.trap("Unauthorized: Only admins can set timing status");

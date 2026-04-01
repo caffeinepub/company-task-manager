@@ -21,6 +21,7 @@ import {
   useCompletionDates,
   useIsAdmin,
   useTaskInstanceCompletions,
+  useTaskInstanceTimingStatuses,
   useTaskPauseStates,
   useTasksByEmployee,
 } from "../hooks/useQueries";
@@ -110,6 +111,7 @@ function buildTrackingRows(
   instanceCompletions: Map<string, bigint>,
   filterPrincipal?: string,
   pauseStateMap?: Map<string, TaskPauseState>,
+  timingOverrides?: Map<string, string>,
 ): string[][] {
   const rows: string[][] = [];
 
@@ -146,7 +148,13 @@ function buildTrackingRows(
         toDisplayDate(inst.targetDate),
         employeeName,
         inst.task.title,
-        inst.isDone ? "Completed" : "Pending",
+        (() => {
+          const instKey = `${inst.task.id}_${inst.targetDate}`;
+          const override = timingOverrides?.get(instKey);
+          if (override === "onTime") return "On Time";
+          if (override === "delayed") return "Delayed";
+          return inst.isDone ? "Completed" : "Pending";
+        })(),
         completionDate,
         toDisplayDate(inst.targetDate),
       ]);
@@ -261,6 +269,8 @@ function EmployeeTaskView({
   const { data: allProfiles = [] } = useAllUserProfiles();
   const { data: pauseStates = new Map<string, TaskPauseState>() } =
     useTaskPauseStates();
+  const { data: timingOverrides = new Map<string, string>() } =
+    useTaskInstanceTimingStatuses();
   const today = getTodayString();
   const todayTasks = tasks.filter((t) => t.targetDate === today);
   const employeeName = entry.profile.name || principalText;
@@ -297,6 +307,7 @@ function EmployeeTaskView({
       instanceCompletions,
       principalText,
       pauseStates,
+      timingOverrides,
     );
     downloadCSV(
       `task_tracking_${employeeName}.csv`,
@@ -562,6 +573,8 @@ function ExportAllEmployeesCompletedButton({
     useTaskInstanceCompletions();
   const { data: pauseStates = new Map<string, TaskPauseState>() } =
     useTaskPauseStates();
+  const { data: timingOverrides = new Map<string, string>() } =
+    useTaskInstanceTimingStatuses();
 
   function handleExportAllCompleted() {
     const nameMap = new Map<string, string>();
@@ -687,6 +700,7 @@ function ExportAllEmployeesCompletedButton({
       instanceCompletions,
       undefined,
       pauseStates,
+      timingOverrides,
     );
     if (rows.length === 0) return;
     downloadCSV("task_tracking_report.csv", rows, TRACKING_CSV_HEADERS);

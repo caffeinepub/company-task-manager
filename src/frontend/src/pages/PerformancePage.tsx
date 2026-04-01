@@ -30,6 +30,7 @@ import {
   useAllUserProfiles,
   useIsAdmin,
   useTaskInstanceCompletions,
+  useTaskInstanceTimingStatuses,
   useTaskPauseStates,
   useTasksByEmployee,
 } from "../hooks/useQueries";
@@ -63,6 +64,7 @@ function generateInstances(
   fromDate: string,
   toDate: string,
   pauseStates?: Map<string, TaskPauseState>,
+  timingOverrides?: Map<string, string>,
 ): TaskInstance[] {
   const instances: TaskInstance[] = [];
 
@@ -133,6 +135,11 @@ function generateInstances(
       } else {
         status = "pending";
       }
+
+      // Apply manual timing override if set
+      const override = timingOverrides?.get(key);
+      if (override === "onTime") status = "onTime";
+      else if (override === "delayed") status = "delayed";
 
       instances.push({
         taskId: task.id,
@@ -332,12 +339,28 @@ function EmployeePerformance({
     data: pauseStates = new Map<string, TaskPauseState>(),
     isLoading: loadingPauseStates,
   } = useTaskPauseStates();
+  const {
+    data: timingOverrides = new Map<string, string>(),
+    isLoading: loadingTimingOverrides,
+  } = useTaskInstanceTimingStatuses();
 
-  const isLoading = loadingTasks || loadingCompletions || loadingPauseStates;
+  const isLoading =
+    loadingTasks ||
+    loadingCompletions ||
+    loadingPauseStates ||
+    loadingTimingOverrides;
 
   const instances = useMemo(
-    () => generateInstances(tasks, completions, fromDate, toDate, pauseStates),
-    [tasks, completions, fromDate, toDate, pauseStates],
+    () =>
+      generateInstances(
+        tasks,
+        completions,
+        fromDate,
+        toDate,
+        pauseStates,
+        timingOverrides,
+      ),
+    [tasks, completions, fromDate, toDate, pauseStates, timingOverrides],
   );
 
   const stats = useMemo(() => {
@@ -616,11 +639,20 @@ function AllCompanyDepartmentPerformance({
     data: pauseStates = new Map<string, TaskPauseState>(),
     isLoading: loadingPauseStates,
   } = useTaskPauseStates();
+  const { data: timingOverrides = new Map<string, string>() } =
+    useTaskInstanceTimingStatuses();
 
   const instances = useMemo(
     () =>
-      generateInstances(allTasks, completions, fromDate, toDate, pauseStates),
-    [allTasks, completions, fromDate, toDate, pauseStates],
+      generateInstances(
+        allTasks,
+        completions,
+        fromDate,
+        toDate,
+        pauseStates,
+        timingOverrides,
+      ),
+    [allTasks, completions, fromDate, toDate, pauseStates, timingOverrides],
   );
 
   if (loadingTasks || loadingCompletions || loadingPauseStates) {

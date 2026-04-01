@@ -37,7 +37,7 @@ export function useIsSuperUser() {
     queryKey: ["isSuperUser"],
     queryFn: async () => {
       if (!actor) return false;
-      return (actor as any).isCallerSuperUser();
+      return actor.isCallerSuperUser();
     },
     enabled: !!actor && !isFetching,
   });
@@ -435,7 +435,7 @@ export function useTaskInstanceRemarks() {
     queryKey: ["taskInstanceRemarks"],
     queryFn: async () => {
       if (!actor) return new Map<string, string>();
-      const entries = await (actor as any).getTaskInstanceRemarks();
+      const entries = await actor.getTaskInstanceRemarks();
       return new Map(entries as Array<[string, string]>);
     },
     enabled: !!actor && !isFetching,
@@ -448,7 +448,7 @@ export function useTaskInstanceTimingStatuses() {
     queryKey: ["taskInstanceTimingStatuses"],
     queryFn: async () => {
       if (!actor) return new Map<string, string>();
-      const entries = await (actor as any).getTaskInstanceTimingStatuses();
+      const entries = await actor.getTaskInstanceTimingStatuses();
       return new Map(entries as Array<[string, string]>);
     },
     enabled: !!actor && !isFetching,
@@ -464,7 +464,7 @@ export function useSetTaskInstanceRemarks() {
       remarks,
     }: { instanceKey: string; remarks: string }) => {
       if (!actor) throw new Error("No actor");
-      return (actor as any).setTaskInstanceRemarks(instanceKey, remarks);
+      return actor.setTaskInstanceRemarks(instanceKey, remarks);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["taskInstanceRemarks"] });
@@ -481,7 +481,7 @@ export function useSetTaskInstanceTimingStatus() {
       status,
     }: { instanceKey: string; status: string }) => {
       if (!actor) throw new Error("No actor");
-      return (actor as any).setTaskInstanceTimingStatus(instanceKey, status);
+      return actor.setTaskInstanceTimingStatus(instanceKey, status);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({
@@ -507,12 +507,7 @@ export function useUpdateTaskDetails() {
       targetDate: string;
     }) => {
       if (!actor) throw new Error("No actor");
-      return (actor as any).updateTaskDetails(
-        taskId,
-        title,
-        description,
-        targetDate,
-      );
+      return actor.updateTaskDetails(taskId, title, description, targetDate);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["allTasks"] });
@@ -526,7 +521,7 @@ export function useAssignSuperUserRole() {
     mutationFn: async ({ user, assign }: { user: string; assign: boolean }) => {
       if (!actor) throw new Error("No actor");
       const principal = Principal.fromText(user);
-      return (actor as any).assignSuperUserRole(principal, assign);
+      return actor.assignSuperUserRole(principal, assign);
     },
   });
 }

@@ -188,7 +188,7 @@ export default function EmployeeTasksDonePage() {
         description: inst.task.description,
         targetDate: inst.targetDate,
         remarks: remarksMap.get(inst.instanceKey) ?? "",
-        timingStatus: timingMap.get(inst.instanceKey) ?? "",
+        timingStatus: timingMap.get(inst.instanceKey) || "notSet",
       });
     },
     [remarksMap, timingMap],
@@ -212,7 +212,7 @@ export default function EmployeeTasksDonePage() {
         }),
         setTimingStatus.mutateAsync({
           instanceKey: instance.instanceKey,
-          status: timingStatus,
+          status: timingStatus === "notSet" ? "" : timingStatus,
         }),
       ]);
       toast.success("Task updated successfully");
@@ -586,7 +586,7 @@ export default function EmployeeTasksDonePage() {
                     <SelectValue placeholder="Select timing status" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Not Set</SelectItem>
+                    <SelectItem value="notSet">Not Set</SelectItem>
                     <SelectItem value="onTime">On Time</SelectItem>
                     <SelectItem value="delayed">Delayed</SelectItem>
                   </SelectContent>

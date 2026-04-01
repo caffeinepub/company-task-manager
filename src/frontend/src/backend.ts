@@ -161,6 +161,13 @@ export interface backendInterface {
     getUserProfile(userPrincipal: Principal): Promise<UserProfile | null>;
     hasAnyAdmin(): Promise<boolean>;
     isCallerAdmin(): Promise<boolean>;
+    isCallerSuperUser(): Promise<boolean>;
+    assignSuperUserRole(user: import('@icp-sdk/core/principal').Principal, assign: boolean): Promise<void>;
+    getTaskInstanceRemarks(): Promise<Array<[string, string]>>;
+    getTaskInstanceTimingStatuses(): Promise<Array<[string, string]>>;
+    setTaskInstanceRemarks(instanceKey: string, remarks: string): Promise<void>;
+    setTaskInstanceTimingStatus(instanceKey: string, status: string): Promise<void>;
+    updateTaskDetails(taskId: bigint, title: string, description: string, targetDate: string): Promise<void>;
     markTaskInstanceDone(taskId: bigint, targetDate: string): Promise<void>;
     pauseTask(taskId: bigint): Promise<void>;
     saveCallerUserProfile(profile: UserProfile): Promise<void>;
@@ -554,6 +561,104 @@ export class Backend implements backendInterface {
             }
         } else {
             const result = await this.actor.updateTaskStatus(arg0, to_candid_TaskStatus_n20(this._uploadFile, this._downloadFile, arg1));
+            return result;
+        }
+    }
+    async assignSuperUserRole(arg0: import('@icp-sdk/core/principal').Principal, arg1: boolean): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.assignSuperUserRole(arg0, arg1);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.assignSuperUserRole(arg0, arg1);
+            return result;
+        }
+    }
+    async isCallerSuperUser(): Promise<boolean> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.isCallerSuperUser();
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.isCallerSuperUser();
+            return result;
+        }
+    }
+    async getTaskInstanceRemarks(): Promise<Array<[string, string]>> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getTaskInstanceRemarks();
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getTaskInstanceRemarks();
+            return result;
+        }
+    }
+    async getTaskInstanceTimingStatuses(): Promise<Array<[string, string]>> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getTaskInstanceTimingStatuses();
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getTaskInstanceTimingStatuses();
+            return result;
+        }
+    }
+    async setTaskInstanceRemarks(arg0: string, arg1: string): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.setTaskInstanceRemarks(arg0, arg1);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.setTaskInstanceRemarks(arg0, arg1);
+            return result;
+        }
+    }
+    async setTaskInstanceTimingStatus(arg0: string, arg1: string): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.setTaskInstanceTimingStatus(arg0, arg1);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.setTaskInstanceTimingStatus(arg0, arg1);
+            return result;
+        }
+    }
+    async updateTaskDetails(arg0: bigint, arg1: string, arg2: string, arg3: string): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.updateTaskDetails(arg0, arg1, arg2, arg3);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.updateTaskDetails(arg0, arg1, arg2, arg3);
             return result;
         }
     }
